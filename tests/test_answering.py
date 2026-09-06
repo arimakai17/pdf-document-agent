@@ -110,3 +110,48 @@ def test_answer_question_skips_model_for_single_shared_term_chunk() -> None:
     assert answer.text == INSUFFICIENT_ANSWER
     assert answer.source_pages == ()
     assert called is False
+
+
+def test_answer_question_rejects_claim_without_lexical_support() -> None:
+    chunks = make_chunks(
+        "Париж является столицей Франции.",
+        "Python встречается в названиях многих книг.",
+    )
+
+    with pytest.raises(AnswerGenerationError, match="лексическ"):
+        answer_question(
+            "Кто создал Python?",
+            chunks,
+            chat=lambda _system, _user: (
+                "Гвидо ван Россум создал Python в 1960 году [стр. 2]."
+            ),
+        )
+
+
+def test_answer_question_rejects_long_answer_with_few_shared_words() -> None:
+    chunks = make_chunks("Гвидо ван Россум написал первую реализацию языка Python.")
+
+    with pytest.raises(AnswerGenerationError, match="лексическ"):
+        answer_question(
+            "Кто создал Python?",
+            chunks,
+            chat=lambda _system, _user: (
+                "Гвидо ван Россум руководил лабораторией в Амстердаме "
+                "и занимался операционными системами [стр. 1]."
+            ),
+        )
+
+
+def test_answer_question_validates_against_cited_page_only() -> None:
+    chunks = make_chunks(
+        "Гвидо ван Россум создал Python.",
+        "Python — это также слово в названиях книг о змеях.",
+    )
+
+    with pytest.raises(AnswerGenerationError, match="лексическ"):
+        answer_question(
+            "Кто создал Python?",
+            chunks,
+            chat=lambda _system, _user: "Python создал Гвидо ван Россум [стр. 2].",
+            top_k=2,
+        )

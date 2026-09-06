@@ -2,11 +2,21 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from pdf_document_agent.retrieval import SearchResult, TextChunk, search_chunks
+from pdf_document_agent.retrieval import (
+    SearchResult,
+    TextChunk,
+    _tokenize,
+    search_chunks,
+)
 
 
 INSUFFICIENT_ANSWER = "В документе недостаточно информации для ответа."
 _CITATION_PATTERN = re.compile(r"\[стр\.\s*(\d+)\]")
+# Минимальная доля содержательных слов ответа, которые должны встречаться
+# дословно в процитированном фрагменте. Это лексическая проверка опоры
+# (не семантическая гарантия истинности): корректный свободный перефраз
+# может быть отклонён, а совпадение половины слов не доказывает факт.
+MIN_CLAIM_SUPPORT = 0.5
 _SYSTEM_PROMPT = f"""Ты отвечаешь на вопросы только по предоставленным отрывкам PDF-документа.
 Не используй внешние знания и не додумывай отсутствующие факты.
 После каждого существенного утверждения указывай страницу в формате [стр. N].
@@ -58,7 +68,27 @@ def answer_question(
             "Модель сослалась на несуществующую страницу контекста."
         )
 
+    cited_chunks = [
+        result.chunk for result in results if result.chunk.page_number in cited_pages
+    ]
+    if not _claim_supported(text, cited_chunks):
+        raise AnswerGenerationError(
+            "Ответ имеет недостаточную лексическую опору в процитированном фрагменте."
+        )
+
     return GroundedAnswer(text=text, source_pages=cited_pages)
+
+
+def _claim_supported(text: str, cited_chunks: list[TextChunk]) -> bool:
+    """Проверить, что содержательные слова ответа в основном присутствуют
+    дословно в процитированных фрагментах (только cited pages, не весь контекст)."""
+    answer_tokens = set(_tokenize(_CITATION_PATTERN.sub("", text)))
+    if not answer_tokens:
+        return False
+    source_tokens: set[str] = set()
+    for chunk in cited_chunks:
+        source_tokens.update(_tokenize(chunk.text))
+    return len(answer_tokens & source_tokens) / len(answer_tokens) >= MIN_CLAIM_SUPPORT
 
 
 def _build_user_prompt(question: str, results: list[SearchResult]) -> str:
