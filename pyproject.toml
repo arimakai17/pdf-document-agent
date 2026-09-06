@@ -1,0 +1,26 @@
+[project]
+name = "pdf-document-agent"
+version = "0.1.0"
+description = "Question-answering agent for text-based and scanned PDF documents"
+readme = "README.md"
+authors = [
+    { name = "Mike Shilin", email = "arimakai17@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "docling>=2.126.0",
+    "ocrmac>=1.0,<2",
+    "streamlit>=1.49,<2",
+]
+
+[project.scripts]
+pdf-document-agent = "pdf_document_agent:main"
+
+[build-system]
+requires = ["uv_build>=0.12.7,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
