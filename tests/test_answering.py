@@ -155,3 +155,42 @@ def test_answer_question_validates_against_cited_page_only() -> None:
             chat=lambda _system, _user: "Python создал Гвидо ван Россум [стр. 2].",
             top_k=2,
         )
+
+
+def test_answer_question_normalizes_refusal_variant() -> None:
+    chunks = make_chunks("Python создал Гвидо ван Россум.")
+
+    answer = answer_question(
+        "Кто создал Python?",
+        chunks,
+        chat=lambda _system, _user: "В документе недостаточно информации.",
+    )
+
+    assert answer.text == INSUFFICIENT_ANSWER
+    assert answer.source_pages == ()
+
+
+def test_answer_question_rejects_refusal_mixed_with_citation() -> None:
+    chunks = make_chunks("Python создал Гвидо ван Россум.")
+
+    with pytest.raises(AnswerGenerationError, match="отказ"):
+        answer_question(
+            "Кто создал Python?",
+            chunks,
+            chat=lambda _system, _user: (
+                "В документе недостаточно информации, но Python создал Гвидо [стр. 1]."
+            ),
+        )
+
+
+def test_answer_question_rejects_refusal_mixed_with_extra_claim() -> None:
+    chunks = make_chunks("Python создал Гвидо ван Россум.")
+
+    with pytest.raises(AnswerGenerationError, match="отказ"):
+        answer_question(
+            "Кто создал Python?",
+            chunks,
+            chat=lambda _system, _user: (
+                "В документе недостаточно информации, но Python создал Гвидо ван Россум."
+            ),
+        )
