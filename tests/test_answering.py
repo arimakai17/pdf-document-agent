@@ -94,3 +94,19 @@ def test_answer_question_rejects_empty_model_output(model_output: str) -> None:
 
     with pytest.raises(AnswerGenerationError, match="пустой ответ"):
         answer_question("Кто создал Python?", chunks, chat=chat)
+
+
+def test_answer_question_skips_model_for_single_shared_term_chunk() -> None:
+    chunks = make_chunks("Python — это простое слово из шести букв.")
+    called = False
+
+    def fake_chat(_system: str, _user: str) -> str:
+        nonlocal called
+        called = True
+        return "Гвидо ван Россум создал Python [стр. 1]."
+
+    answer = answer_question("Кто создал язык Python?", chunks, chat=fake_chat)
+
+    assert answer.text == INSUFFICIENT_ANSWER
+    assert answer.source_pages == ()
+    assert called is False

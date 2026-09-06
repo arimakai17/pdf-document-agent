@@ -53,3 +53,18 @@ def test_search_chunks_rejects_empty_question() -> None:
 
     with pytest.raises(ValueError, match="Вопрос не должен быть пустым"):
         search_chunks("   ", chunks)
+
+
+def test_search_chunks_rejects_chunk_with_single_shared_term() -> None:
+    chunks = chunk_document(make_document("Python — это простое слово из шести букв."))
+
+    assert search_chunks("Кто создал язык Python?", chunks) == []
+
+
+def test_search_chunks_keeps_chunk_with_sufficient_coverage() -> None:
+    chunks = chunk_document(make_document("Python создал Гвидо ван Россум."))
+
+    results = search_chunks("Кто создал Python?", chunks, top_k=1)
+
+    assert results
+    assert results[0].chunk.page_number == 1

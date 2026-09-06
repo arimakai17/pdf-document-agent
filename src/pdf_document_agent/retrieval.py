@@ -109,6 +109,13 @@ class SearchResult:
     score: float
 
 
+# Минимальная доля содержательных терминов вопроса, которую фрагмент должен
+# покрыть, чтобы считаться релевантным. Это лексический coverage-гейт (не
+# семантическая гарантия): он отсекает фрагменты, совпавшие по одному общему
+# слову из трёх, но пропускает однотерминовые вопросы (1/1).
+MIN_QUERY_COVERAGE = 0.5
+
+
 def chunk_document(
     document: ExtractedDocument,
     *,
@@ -164,6 +171,9 @@ def search_chunks(
     scored: list[SearchResult] = []
 
     for chunk, tokens in zip(chunks, tokenized_chunks, strict=True):
+        matched_terms = query_terms & set(tokens)
+        if len(matched_terms) / len(query_terms) < MIN_QUERY_COVERAGE:
+            continue
         frequencies = Counter(tokens)
         score = _bm25_score(
             query_terms,
