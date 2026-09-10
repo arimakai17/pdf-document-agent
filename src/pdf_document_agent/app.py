@@ -320,13 +320,13 @@ def _apply_styles() -> None:
         <style>
         :root {
             color-scheme: dark;
-            --agent-bg: #0A0A0B;
-            --agent-surface: #111214;
-            --agent-surface-raised: #17181B;
-            --agent-border: #2A2B2F;
-            --agent-border-strong: #42444B;
-            --agent-text: #F3F4F6;
-            --agent-muted: #A8ABB3;
+            --agent-bg: #1B1D21;
+            --agent-surface: #23262A;
+            --agent-surface-raised: #2A2D32;
+            --agent-border: #3A3E45;
+            --agent-border-strong: #4A4F58;
+            --agent-text: #ECEEF1;
+            --agent-muted: #AEB2BA;
             --agent-accent: #FF4D00;
             --agent-accent-hover: #E64500;
         }
@@ -421,7 +421,7 @@ def _apply_styles() -> None:
         }
         .stButton > button:hover,
         [data-testid="stFileUploaderDropzone"] button:hover {
-            background: #1E2024;
+            background: #32363C;
             border-color: var(--agent-accent);
             color: var(--agent-accent);
         }
@@ -445,7 +445,7 @@ def _apply_styles() -> None:
         button:disabled {
             background: var(--agent-surface) !important;
             border-color: var(--agent-border) !important;
-            color: #61646B !important;
+            color: #747982 !important;
         }
 
         [data-testid="stAlert"] {
