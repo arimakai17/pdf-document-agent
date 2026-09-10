@@ -100,6 +100,7 @@ class TextChunk:
     page_number: int
     text: str
     boxes: tuple[NormalizedBox, ...] = ()
+    regions: tuple[TextRegion, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -108,6 +109,7 @@ class SearchResult:
 
     chunk: TextChunk
     score: float
+    highlight_boxes: tuple[NormalizedBox, ...] = ()
 
 
 # Минимальная доля содержательных терминов вопроса, которую фрагмент должен
@@ -133,12 +135,14 @@ def chunk_document(
     for page in document.pages:
         regions = getattr(page, "regions", ())
         for text in _split_text(page.markdown, max_chars, overlap_chars):
+            chunk_regions = _regions_for_chunk(text, regions)
             chunks.append(
                 TextChunk(
                     index=len(chunks),
                     page_number=page.number,
                     text=text,
-                    boxes=_boxes_for_chunk(text, regions),
+                    boxes=_boxes_for_regions(chunk_regions),
+                    regions=chunk_regions,
                 )
             )
     return chunks
@@ -187,17 +191,28 @@ def search_chunks(
             average_length=average_length,
         )
         if score > 0:
-            scored.append(SearchResult(chunk=chunk, score=score))
+            highlight_boxes = chunk.boxes
+            if chunk.regions:
+                highlight_boxes = _boxes_for_regions(
+                    _regions_matching_terms(matched_terms, chunk.regions)
+                )
+            scored.append(
+                SearchResult(
+                    chunk=chunk,
+                    score=score,
+                    highlight_boxes=highlight_boxes,
+                )
+            )
 
     scored.sort(key=lambda result: (-result.score, result.chunk.index))
     return scored[:top_k]
 
 
-def _boxes_for_chunk(
+def _regions_for_chunk(
     chunk_text: str,
     regions: tuple[TextRegion, ...],
-) -> tuple[NormalizedBox, ...]:
-    """Сопоставить фрагменту реальные boxes по лексическому перекрытию токенов.
+) -> tuple[TextRegion, ...]:
+    """Сопоставить фрагменту реальные регионы по лексическому перекрытию токенов.
 
     Используется только provenance регионов на той же странице (они уже лежат в
     `regions` страницы) и положительное перекрытие токенов между текстом фрагмента
@@ -206,19 +221,29 @@ def _boxes_for_chunk(
     if not regions:
         return ()
     chunk_tokens = set(_tokenize(chunk_text))
-    if not chunk_tokens:
-        return ()
+    return _regions_matching_terms(chunk_tokens, regions)
 
+
+def _regions_matching_terms(
+    terms: set[str],
+    regions: tuple[TextRegion, ...],
+) -> tuple[TextRegion, ...]:
+    return tuple(
+        region
+        for region in regions
+        if terms & set(_tokenize(region.text))
+    )
+
+
+def _boxes_for_regions(
+    regions: tuple[TextRegion, ...],
+) -> tuple[NormalizedBox, ...]:
     boxes: list[NormalizedBox] = []
     seen: set[NormalizedBox] = set()
     for region in regions:
-        region_tokens = set(_tokenize(region.text))
-        if not region_tokens:
-            continue
-        if chunk_tokens & region_tokens:
-            if region.box not in seen:
-                seen.add(region.box)
-                boxes.append(region.box)
+        if region.box not in seen:
+            seen.add(region.box)
+            boxes.append(region.box)
     return tuple(boxes)
 
 

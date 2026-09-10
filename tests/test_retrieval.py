@@ -1,7 +1,12 @@
 import pytest
 
 from pdf_document_agent.extractor import ExtractedDocument, ExtractedPage, TextRegion
-from pdf_document_agent.retrieval import TextChunk, chunk_document, search_chunks
+from pdf_document_agent.retrieval import (
+    SearchResult,
+    TextChunk,
+    chunk_document,
+    search_chunks,
+)
 
 
 def make_document(*pages: str) -> ExtractedDocument:
@@ -114,6 +119,77 @@ def test_chunk_document_attaches_boxes_from_same_page_regions() -> None:
     assert page2[0].boxes == ((0.2, 0.2, 0.6, 0.3),)
 
 
+def test_search_chunks_highlights_only_regions_matching_query_terms() -> None:
+    header_box = (0.1, 0.1, 0.9, 0.2)
+    target_box = (0.1, 0.4, 0.9, 0.5)
+    footer_box = (0.1, 0.8, 0.9, 0.9)
+    document = _document_with_regions(
+        (
+            "Введение в информационный поиск.\n\n"
+            "Главное правило RAG: Garbage In, Garbage Out.\n\n"
+            "Конец лекции и вопросы для повторения.",
+            (
+                TextRegion(
+                    page_number=1,
+                    text="Введение в информационный поиск.",
+                    box=header_box,
+                ),
+                TextRegion(
+                    page_number=1,
+                    text="Главное правило RAG: Garbage In, Garbage Out.",
+                    box=target_box,
+                ),
+                TextRegion(
+                    page_number=1,
+                    text="Конец лекции и вопросы для повторения.",
+                    box=footer_box,
+                ),
+            ),
+        ),
+    )
+    chunks = chunk_document(document)
+
+    results = search_chunks("Garbage In Garbage Out", chunks, top_k=1)
+
+    assert chunks[0].boxes == (header_box, target_box, footer_box)
+    assert results[0].highlight_boxes == (target_box,)
+
+
+def test_search_chunks_falls_back_to_manual_chunk_boxes_without_regions() -> None:
+    box = (0.1, 0.2, 0.5, 0.3)
+    chunk = TextChunk(
+        index=0,
+        page_number=1,
+        text="Python создал Гвидо ван Россум.",
+        boxes=(box,),
+    )
+
+    results = search_chunks("Кто создал Python?", [chunk], top_k=1)
+
+    assert results[0].highlight_boxes == (box,)
+
+
+def test_search_chunks_does_not_fall_back_when_regions_do_not_match_query() -> None:
+    broad_box = (0.1, 0.1, 0.9, 0.9)
+    chunk = TextChunk(
+        index=0,
+        page_number=1,
+        text="Garbage Out находится только в markdown фрагмента.",
+        boxes=(broad_box,),
+        regions=(
+            TextRegion(
+                page_number=1,
+                text="Несвязанный распознанный регион.",
+                box=broad_box,
+            ),
+        ),
+    )
+
+    results = search_chunks("Garbage Out", [chunk], top_k=1)
+
+    assert results[0].highlight_boxes == ()
+
+
 def test_chunk_without_lexical_overlap_has_no_boxes() -> None:
     document = _document_with_regions(
         (
@@ -137,3 +213,10 @@ def test_text_chunk_default_constructor_has_empty_boxes() -> None:
     chunk = TextChunk(index=0, page_number=1, text="текст")
 
     assert chunk.boxes == ()
+    assert chunk.regions == ()
+
+
+def test_search_result_default_constructor_has_empty_highlight_boxes() -> None:
+    chunk = TextChunk(index=0, page_number=1, text="текст")
+
+    assert SearchResult(chunk=chunk, score=1.0).highlight_boxes == ()

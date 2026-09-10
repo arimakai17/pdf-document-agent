@@ -117,7 +117,7 @@ def _build_sources(
         CitedSource(
             page_number=page,
             excerpt=best_by_page[page].chunk.text,
-            boxes=best_by_page[page].chunk.boxes,
+            boxes=best_by_page[page].highlight_boxes,
         )
         for page in cited_pages
         if page in best_by_page

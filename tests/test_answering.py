@@ -273,20 +273,38 @@ def test_answer_selects_best_chunk_per_cited_page() -> None:
     assert answer.sources[0].excerpt == best.text
 
 
-def test_answer_source_boxes_flow_from_chunk_provenance() -> None:
+def test_answer_source_boxes_are_query_specific() -> None:
+    header_box = (0.1, 0.1, 0.9, 0.2)
+    target_box = (0.1, 0.4, 0.9, 0.5)
+    footer_box = (0.1, 0.8, 0.9, 0.9)
+    markdown = (
+        "Введение в информационный поиск.\n\n"
+        "Главное правило RAG: Garbage In, Garbage Out.\n\n"
+        "Конец лекции и вопросы для повторения."
+    )
     document = ExtractedDocument(
         source_name="book.pdf",
-        markdown="Python создал Гвидо ван Россум.",
+        markdown=markdown,
         page_count=1,
         pages=(
             ExtractedPage(
                 number=1,
-                markdown="Python создал Гвидо ван Россум.",
+                markdown=markdown,
                 regions=(
                     TextRegion(
                         page_number=1,
-                        text="Python создал Гвидо ван Россум.",
-                        box=(0.1, 0.2, 0.5, 0.3),
+                        text="Введение в информационный поиск.",
+                        box=header_box,
+                    ),
+                    TextRegion(
+                        page_number=1,
+                        text="Главное правило RAG: Garbage In, Garbage Out.",
+                        box=target_box,
+                    ),
+                    TextRegion(
+                        page_number=1,
+                        text="Конец лекции и вопросы для повторения.",
+                        box=footer_box,
                     ),
                 ),
             ),
@@ -295,11 +313,11 @@ def test_answer_source_boxes_flow_from_chunk_provenance() -> None:
     chunks = chunk_document(document)
 
     def fake_chat(_system: str, _user: str) -> str:
-        return "Python создал Гвидо ван Россум [стр. 1]."
+        return "Главное правило RAG — Garbage In, Garbage Out [стр. 1]."
 
-    answer = answer_question("Кто создал Python?", chunks, chat=fake_chat)
+    answer = answer_question("Garbage In Garbage Out", chunks, chat=fake_chat)
 
-    assert answer.sources[0].boxes == ((0.1, 0.2, 0.5, 0.3),)
+    assert answer.sources[0].boxes == (target_box,)
 
 
 def test_refusal_has_no_sources() -> None:
