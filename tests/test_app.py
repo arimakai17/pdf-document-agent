@@ -3,6 +3,7 @@ from xml.etree import ElementTree
 
 from streamlit.testing.v1 import AppTest
 
+from pdf_document_agent import answering
 from pdf_document_agent import cache
 from pdf_document_agent.extractor import (
     ExtractedDocument,
@@ -244,6 +245,78 @@ def test_history_is_visible_and_can_switch_conversation(tmp_path, monkeypatch):
     ).click()
     app.run(timeout=30)
     assert len(app.chat_message) == 4
+
+
+def test_delete_controls_remove_whole_exchange_from_chat_and_history(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("PDF_DOCUMENT_AGENT_CACHE_DIR", str(tmp_path))
+    file_bytes = b"%PDF-1.4\n1 0 obj\nfake\n"
+    _seed_cached_pdf(file_bytes)
+
+    app = AppTest.from_file(str(APP_PATH)).run(timeout=30)
+    app.get("file_uploader")[0].set_value(
+        ("sample.pdf", file_bytes, "application/pdf")
+    )
+    app.run(timeout=30)
+    app.session_state["messages"] = [
+        {"role": "user", "content": "Первый вопрос"},
+        {"role": "assistant", "content": "Первый ответ", "sources": ()},
+        {"role": "user", "content": "Второй вопрос"},
+        {"role": "assistant", "content": "Второй ответ", "sources": ()},
+        {"role": "user", "content": "Ошибочный вопрос без ответа"},
+    ]
+    app.run(timeout=30)
+
+    app.get_by_key("delete_message_1").click().run(timeout=30)
+    assert [message["content"] for message in app.session_state["messages"]] == [
+        "Второй вопрос",
+        "Второй ответ",
+        "Ошибочный вопрос без ответа",
+    ]
+    assert not any(button.label == "Первый вопрос" for button in app.button)
+
+    app.get_by_key("delete_history_0").click().run(timeout=30)
+    assert [message["content"] for message in app.session_state["messages"]] == [
+        "Ошибочный вопрос без ответа"
+    ]
+    assert not any(button.label == "Второй вопрос" for button in app.button)
+
+    app.get_by_key("delete_message_0").click().run(timeout=30)
+    assert app.session_state["messages"] == []
+    assert not app.exception
+
+
+def test_failed_answer_rerenders_question_with_delete_controls(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("PDF_DOCUMENT_AGENT_CACHE_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        answering,
+        "answer_question",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            answering.AnswerGenerationError("model failure")
+        ),
+    )
+    file_bytes = b"%PDF-1.4\n1 0 obj\nfake\n"
+    _seed_cached_pdf(file_bytes)
+
+    app = AppTest.from_file(str(APP_PATH)).run(timeout=30)
+    app.get("file_uploader")[0].set_value(
+        ("sample.pdf", file_bytes, "application/pdf")
+    )
+    app.run(timeout=30)
+    next(
+        item for item in app.text_input if item.label == "Вопрос по документу"
+    ).set_value("Вопрос со сбоем")
+    next(button for button in app.button if button.label == "Получить ответ").click()
+    app.run(timeout=30)
+
+    assert not app.exception
+    assert app.get_by_key("delete_message_0").label == "×"
+    assert app.get_by_key("delete_history_0").label == "×"
+    assert any(button.label == "Вопрос со сбоем" for button in app.button)
+    assert any("Попробуй ещё раз" in error.value for error in app.error)
 
 
 # --- animated status mascot ---------------------------------------------------

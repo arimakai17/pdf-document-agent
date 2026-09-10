@@ -152,6 +152,33 @@ def _show_current_dialog() -> None:
     st.session_state.selected_history_index = None
 
 
+def _delete_exchange(message_index: int) -> None:
+    """Удалить вопрос вместе с ответом либо одиночный вопрос после ошибки."""
+    messages = st.session_state.get("messages", [])
+    if not isinstance(message_index, int) or not 0 <= message_index < len(messages):
+        return
+
+    exchange_start = message_index
+    if (
+        messages[message_index].get("role") == "assistant"
+        and message_index > 0
+        and messages[message_index - 1].get("role") == "user"
+    ):
+        exchange_start -= 1
+
+    exchange_end = exchange_start + 1
+    if (
+        messages[exchange_start].get("role") == "user"
+        and exchange_end < len(messages)
+        and messages[exchange_end].get("role") == "assistant"
+    ):
+        exchange_end += 1
+
+    del messages[exchange_start:exchange_end]
+    st.session_state.selected_history_index = None
+    st.session_state.active_boxes = ()
+
+
 def _trim_history(messages: list[dict], max_questions: int) -> bool:
     """Оставить последние max_questions пар диалога в памяти сессии."""
     question_indexes = [
@@ -354,7 +381,10 @@ def run_app() -> None:
                 )
                 sources = answer_message.get("sources", ()) if answer_message else ()
                 first_source = sources[0] if sources else None
-                st.button(
+                history_item, delete_item = st.columns(
+                    [9, 1], gap="small", vertical_alignment="center"
+                )
+                history_item.button(
                     label,
                     key=f"history_{message_index}",
                     on_click=_select_history_item,
@@ -364,6 +394,14 @@ def run_app() -> None:
                         first_source.boxes if first_source else (),
                     ),
                     width="stretch",
+                )
+                delete_item.button(
+                    "×",
+                    key=f"delete_history_{message_index}",
+                    help=text(locale, "delete_exchange"),
+                    on_click=_delete_exchange,
+                    args=(message_index,),
+                    type="tertiary",
                 )
 
         selected_index = st.session_state.get("selected_history_index")
@@ -380,6 +418,17 @@ def run_app() -> None:
 
         for message_index, message in visible_messages:
             with st.chat_message(message["role"]):
+                delete_item = st.columns(
+                    [19, 1], gap="small", vertical_alignment="top"
+                )[1]
+                delete_item.button(
+                    "×",
+                    key=f"delete_message_{message_index}",
+                    help=text(locale, "delete_exchange"),
+                    on_click=_delete_exchange,
+                    args=(message_index,),
+                    type="tertiary",
+                )
                 st.write(message["content"])
                 if message["role"] != "assistant":
                     continue
@@ -390,6 +439,9 @@ def run_app() -> None:
                         on_click=_select_source,
                         args=(source.page_number, source.boxes),
                     )
+
+        if st.session_state.pop("answer_failed", False):
+            st.error(text(locale, "answer_error"))
 
         with st.form("question_form", clear_on_submit=True):
             question = st.text_input(
@@ -430,7 +482,8 @@ def run_app() -> None:
                 answer_language=ANSWER_LANGUAGE[locale],
             )
         except (ValueError, OllamaError, AnswerGenerationError):
-            st.error(text(locale, "answer_error"))
+            st.session_state.answer_failed = True
+            st.rerun()
             return
 
         messages.append(
