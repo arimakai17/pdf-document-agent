@@ -1,5 +1,5 @@
 import hashlib
-import json
+
 import tempfile
 from functools import partial
 from pathlib import Path
@@ -765,10 +765,9 @@ def _apply_styles(locale: Locale) -> None:
         """,
         unsafe_allow_html=True,
     )
-    dropzone_copy = json.dumps(text(locale, "dropzone"), ensure_ascii=False)
-    dropzone_limit = json.dumps(text(locale, "dropzone_limit"), ensure_ascii=False)
     st.markdown(
         f"""
+        {""}
         <style>
         .st-key-ui_locale {{
             display: flex;
@@ -802,23 +801,6 @@ def _apply_styles(locale: Locale) -> None:
             justify-content: center;
             gap: 0.45rem;
             cursor: pointer;
-        }}
-        .st-key-pdf_uploader [data-testid="stFileUploaderDropzone"] > * {{
-            visibility: hidden;
-            position: absolute;
-        }}
-        .st-key-pdf_uploader [data-testid="stFileUploaderDropzone"]::before {{
-            content: {dropzone_copy};
-            color: var(--agent-text);
-            font-weight: 600;
-            pointer-events: none;
-        }}
-        .st-key-pdf_uploader [data-testid="stFileUploaderDropzone"]::after {{
-            content: {dropzone_limit};
-            color: var(--agent-muted);
-            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-            font-size: 0.78rem;
-            pointer-events: none;
         }}
         </style>
         """,

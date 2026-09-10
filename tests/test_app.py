@@ -11,6 +11,7 @@ from pdf_document_agent.extractor import (
     TextRegion,
 )
 from pdf_document_agent.retrieval import TextChunk
+from pdf_document_agent import app as app_module
 
 
 APP_PATH = (
@@ -33,6 +34,18 @@ def test_app_starts_in_russian_with_pdf_atlas_branding() -> None:
     assert "Документ" in [item.value for item in app.subheader]
     assert "Диалог" in [item.value for item in app.subheader]
     assert "Загрузи PDF" in app.info[0].value
+
+
+def test_pdf_uploader_styles_keep_native_controls_visible(monkeypatch) -> None:
+    markup = []
+    monkeypatch.setattr(app_module.st, "markdown", lambda value, **kwargs: markup.append(value))
+
+    app_module._apply_styles(app_module.DEFAULT_LOCALE)
+
+    css = "".join(markup)
+    assert '[data-testid="stFileUploaderDropzone"]>*{visibility:hidden;' not in "".join(css.split())
+    assert 'stFileUploaderDropzone::before' not in css
+    assert 'stFileUploaderDropzone::after' not in css
 
 
 def test_language_switch_changes_entire_empty_state_ui_to_english() -> None:
