@@ -16,7 +16,16 @@ from pdf_document_agent.retrieval import (
 INSUFFICIENT_ANSWER = "В документе недостаточно информации для ответа."
 INSUFFICIENT_ANSWER_EN = "The document does not contain enough information to answer."
 AnswerLanguage = Literal["Russian", "English"]
-_CITATION_PATTERN = re.compile(r"\[(?:стр\.|p\.)\s*(\d+)\]", re.IGNORECASE)
+_CITATION_PATTERN = re.compile(
+    r"\[(?:стр\.|p\.)\s*(\d+)(?:\s*[-–—]\s*(\d+))?\]",
+    re.IGNORECASE,
+)
+# Жёсткий потолок ширины диапазона цитирования. Ограничивает выделение памяти
+# патологическим выводом вида [p. 1-1000000] до создания range: диапазон шире
+# этого лимита отклоняется fail-closed. Лимит не привязан к top_k — число
+# уникальных страниц контекста может отличаться от топ-k, а парсер не должен
+# зависеть от настроек retrieval.
+_CITATION_RANGE_SPAN_MAX = 50
 _REFUSALS = (
     ("недостаточно информации", frozenset(_tokenize(INSUFFICIENT_ANSWER))),
     ("does not contain enough information", frozenset(_tokenize(INSUFFICIENT_ANSWER_EN))),
@@ -120,6 +129,34 @@ class GroundedAnswer:
     sources: tuple[CitedSource, ...] = ()
 
 
+def _expand_cited_pages(text: str) -> tuple[int, ...]:
+    """Развернуть цитирования модели в уникальные страницы в порядке появления.
+
+    Принимает одиночные ссылки [стр. 42] и ограниченные диапазоны
+    [стр. 289–292]/[p. 10-12] с дефисом, en dash или em dash в качестве
+    разделителя. Нисходящий диапазон (end < start) или диапазон шире
+    _CITATION_RANGE_SPAN_MAX отклоняется через AnswerGenerationError до
+    создания range, поэтому патологический вывод не выделяет память.
+    Принадлежность каждой страницы retrieved-контексту проверяется отдельно
+    вызывающим кодом.
+    """
+    pages: list[int] = []
+    seen: set[int] = set()
+    for match in _CITATION_PATTERN.finditer(text):
+        start = int(match.group(1))
+        end_raw = match.group(2)
+        end = int(end_raw) if end_raw else start
+        if end < start or end - start + 1 > _CITATION_RANGE_SPAN_MAX:
+            raise AnswerGenerationError(
+                "Модель указала некорректный диапазон страниц."
+            )
+        for page in range(start, end + 1):
+            if page not in seen:
+                seen.add(page)
+                pages.append(page)
+    return tuple(pages)
+
+
 def answer_question(
     question: str,
     chunks: list[TextChunk],
@@ -200,9 +237,7 @@ def answer_question(
     context_pages = tuple(
         dict.fromkeys(result.chunk.page_number for result in results)
     )
-    cited_pages = tuple(
-        dict.fromkeys(int(page) for page in _CITATION_PATTERN.findall(text))
-    )
+    cited_pages = _expand_cited_pages(text)
     if not cited_pages:
         raise AnswerGenerationError("Модель не указала страницу источника.")
     if any(page not in context_pages for page in cited_pages):

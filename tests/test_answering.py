@@ -837,3 +837,100 @@ def test_detect_chapter_number_variants(question: str, expected: int) -> None:
 def test_detect_chapter_number_requires_chapter_marker(question: str) -> None:
     assert _detect_chapter_number(question) is None
 
+
+def test_citation_range_russian_expands_bounded_range() -> None:
+    chunks = [
+        TextChunk(index=0, page_number=289, text="Software entropy is the gradual decay."),
+        TextChunk(index=1, page_number=290, text="Software entropy disorder creeps into a system over time."),
+        TextChunk(index=2, page_number=291, text="Software entropy means fix broken windows as soon as they appear."),
+        TextChunk(index=3, page_number=292, text="Software entropy do not let it win through neglect."),
+    ]
+
+    answer = answer_question(
+        "Как автор определяет энтропию программного обеспечения?",
+        chunks,
+        chat=_rewriting_chat(
+            rewritten="software entropy",
+            answer="Энтропия нарастает со временем [стр. 289–292].",
+        ),
+        top_k=5,
+    )
+
+    assert answer.source_pages == (289, 290, 291, 292)
+    assert [source.page_number for source in answer.sources] == [289, 290, 291, 292]
+
+
+def test_citation_range_english_hyphen() -> None:
+    chunks = [
+        TextChunk(index=0, page_number=10, text="Software entropy is the gradual decay."),
+        TextChunk(index=1, page_number=11, text="Software entropy disorder creeps into a system over time."),
+        TextChunk(index=2, page_number=12, text="Software entropy means fix broken windows as soon as they appear."),
+    ]
+
+    answer = answer_question(
+        "How does the author define software entropy?",
+        chunks,
+        chat=_rewriting_chat(
+            rewritten="software entropy",
+            answer="Software entropy is growing disorder in a system [p. 10-12].",
+        ),
+        top_k=3,
+    )
+
+    assert answer.source_pages == (10, 11, 12)
+
+
+def test_citation_range_missing_page_rejected() -> None:
+    chunks = [
+        TextChunk(index=0, page_number=10, text="Software entropy is the gradual decay."),
+        TextChunk(index=1, page_number=11, text="Software entropy disorder creeps into a system over time."),
+        TextChunk(index=2, page_number=13, text="Software entropy means fix broken windows as soon as they appear."),
+    ]
+
+    with pytest.raises(AnswerGenerationError, match="несуществующую страницу"):
+        answer_question(
+            "How does the author define software entropy?",
+            chunks,
+            chat=_rewriting_chat(
+                rewritten="software entropy",
+                answer="Software entropy grows over time [p. 10-13].",
+            ),
+            top_k=3,
+        )
+
+
+def test_citation_range_descending_rejected() -> None:
+    chunks = [
+        TextChunk(index=0, page_number=289, text="Software entropy is the gradual decay."),
+        TextChunk(index=1, page_number=290, text="Software entropy disorder creeps into a system over time."),
+    ]
+
+    with pytest.raises(AnswerGenerationError, match="диапазон"):
+        answer_question(
+            "How does the author define software entropy?",
+            chunks,
+            chat=_rewriting_chat(
+                rewritten="software entropy",
+                answer="Software entropy grows over time [стр. 290–289].",
+            ),
+            top_k=2,
+        )
+
+
+def test_citation_range_anomalously_large_rejected() -> None:
+    chunks = [
+        TextChunk(index=0, page_number=1, text="Software entropy is the gradual decay."),
+    ]
+
+    with pytest.raises(AnswerGenerationError, match="диапазон"):
+        answer_question(
+            "How does the author define software entropy?",
+            chunks,
+            chat=_rewriting_chat(
+                rewritten="software entropy",
+                answer="Software entropy grows over time [p. 1-51].",
+            ),
+            top_k=1,
+        )
+
+
