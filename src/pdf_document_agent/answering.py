@@ -147,8 +147,9 @@ def _rewrite_search_query(
     """Переписать вопрос в короткий поисковый запрос на языке документа.
 
     Возвращает строку с терминами (разделёнными пробелами), которые буквально
-    встречаются в словаре документа, либо None при ошибке/пустом выводе/пустом
-    пересечении — тогда поиск идёт по исходному вопросу.
+    встречаются в словаре документа, либо None при пустом выводе/пустом
+    пересечении — тогда поиск идёт по исходному вопросу. Ошибки модели и явно
+    нарушающий контракт вывод преобразуются в AnswerGenerationError.
     """
     sample = _document_language_sample(chunks)
     if not sample.strip():
@@ -177,18 +178,30 @@ def _rewrite_search_query(
             "Модель вернула переписанный поисковый запрос более чем в одной строке."
         )
     vocabulary = document_vocabulary(chunks)
-    terms = [
-        token for token in _tokenize(raw) if token in vocabulary
-    ]
-    terms = list(dict.fromkeys(terms))
+    original_terms = set(_tokenize(question))
+    minimum_terms = 1 if len(original_terms) <= 1 else 2
+
+    # Qwen иногда возвращает правильную короткую группу первой, а затем
+    # дописывает лишние темы через запятую. Берём первый компактный сегмент,
+    # прошедший фильтр полного словаря документа. Это также пропускает мимо
+    # сегменты на языке вопроса, если документ написан на другом языке.
+    for segment in re.split(r"[,;]", raw):
+        segment_terms = list(
+            dict.fromkeys(
+                token for token in _tokenize(segment) if token in vocabulary
+            )
+        )
+        if minimum_terms <= len(segment_terms) <= _MAX_REWRITE_TERMS:
+            return " ".join(segment_terms)
+
+    terms = list(
+        dict.fromkeys(token for token in _tokenize(raw) if token in vocabulary)
+    )
     if len(terms) > _MAX_REWRITE_TERMS:
         raise AnswerGenerationError(
             "Модель вернула слишком много терминов в переписанном поисковом запросе."
         )
-    if not terms:
-        return None
-    original_terms = set(_tokenize(question))
-    if len(original_terms) > 1 and len(terms) < 2:
+    if len(terms) < minimum_terms:
         return None
     return " ".join(terms)
 

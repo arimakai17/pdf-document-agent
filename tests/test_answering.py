@@ -413,14 +413,28 @@ def test_rewrite_filters_mixed_language_output_to_vocabulary() -> None:
     assert query == "software entropy"
 
 
-def test_rewrite_rejects_malformed_long_model_output() -> None:
-    chunks = _entropy_chunks()
-    malformed = (
-        "The Pragmatic Programmer, Dave Thomas, Andy Hunt, trademark, "
-        "Pearson Education, software, entropy, definition, author, "
-        "chapter, introduction, contents, appendix, "
-        "software, entropy, definition, author, software, entropy"
+def test_rewrite_selects_first_compact_group_from_real_qwen_output() -> None:
+    chunks = make_chunks(
+        "Software entropy definition. Pragmatic programmer book concepts. "
+        "Programming principles and code quality measures."
     )
+    actual_qwen_output = (
+        "software entropy definition, pragmatic programmer, book concepts, "
+        "programming principles, code quality measures"
+    )
+
+    query = _rewrite_search_query(
+        "Как автор определяет энтропию программного обеспечения?",
+        chunks,
+        lambda _system, _user: actual_qwen_output,
+    )
+
+    assert query == "software entropy definition"
+
+
+def test_rewrite_rejects_unstructured_long_model_output() -> None:
+    chunks = _entropy_chunks()
+    malformed = "software entropy " * 20
 
     with pytest.raises(AnswerGenerationError, match="переписан.*запрос"):
         _rewrite_search_query(
