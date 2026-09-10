@@ -327,8 +327,7 @@ def run_app() -> None:
             for index, message in enumerate(messages)
             if message["role"] == "user"
         ]
-        with st.sidebar:
-            st.subheader(text(locale, "history"))
+        with st.popover(text(locale, "history"), icon=":material/history:"):
             st.caption(text(locale, "history_scope"))
             selected_index = st.session_state.get("selected_history_index")
             if selected_index is not None:
@@ -336,6 +335,7 @@ def run_app() -> None:
                     text(locale, "return_current"),
                     key="history_current",
                     on_click=_show_current_dialog,
+                    width="stretch",
                 )
             if not question_indexes:
                 st.caption(text(locale, "history_empty"))
@@ -363,6 +363,7 @@ def run_app() -> None:
                         first_source.page_number if first_source else None,
                         first_source.boxes if first_source else (),
                     ),
+                    width="stretch",
                 )
 
         selected_index = st.session_state.get("selected_history_index")

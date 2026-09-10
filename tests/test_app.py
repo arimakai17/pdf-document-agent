@@ -206,6 +206,46 @@ def test_no_duplicate_uploader_label_inside_expander() -> None:
     assert uploader.allowed_type == [".pdf"]
 
 
+def test_history_is_visible_and_can_switch_conversation(tmp_path, monkeypatch):
+    monkeypatch.setenv("PDF_DOCUMENT_AGENT_CACHE_DIR", str(tmp_path))
+    file_bytes = b"%PDF-1.4\n1 0 obj\nfake\n"
+    _seed_cached_pdf(file_bytes)
+
+    app = AppTest.from_file(str(APP_PATH)).run(timeout=30)
+    app.get("file_uploader")[0].set_value(
+        ("sample.pdf", file_bytes, "application/pdf")
+    )
+    app.run(timeout=30)
+    app.session_state["messages"] = [
+        {"role": "user", "content": "Первый вопрос"},
+        {"role": "assistant", "content": "Первый ответ", "sources": ()},
+        {"role": "user", "content": "Второй вопрос"},
+        {"role": "assistant", "content": "Второй ответ", "sources": ()},
+    ]
+    app.run(timeout=30)
+
+    assert not app.exception
+    assert [item.proto.popover.label for item in app.get("popover")] == [
+        "История вопросов"
+    ]
+
+    next(button for button in app.button if button.label == "Первый вопрос").click()
+    app.run(timeout=30)
+
+    assert app.session_state["selected_history_index"] == 0
+    assert [message.markdown[0].value for message in app.chat_message] == [
+        "Первый вопрос",
+        "Первый ответ",
+    ]
+    next(
+        button
+        for button in app.button
+        if button.label == "Вернуться к текущему диалогу"
+    ).click()
+    app.run(timeout=30)
+    assert len(app.chat_message) == 4
+
+
 # --- animated status mascot ---------------------------------------------------
 
 
