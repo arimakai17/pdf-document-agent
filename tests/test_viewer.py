@@ -25,6 +25,8 @@ def test_render_page_draws_marker_over_requested_box() -> None:
     assert image.size == (200, 200)
     # Центр внутри маркированного региона не должен остаться чисто белым.
     assert image.getpixel((100, 100)) != (255, 255, 255)
+    # Край имеет ту же заливку: отдельной цветной рамки вокруг marker нет.
+    assert image.getpixel((50, 50)) == image.getpixel((100, 100))
     # Угол вне региона остаётся белым.
     assert image.getpixel((5, 5)) == (255, 255, 255)
 

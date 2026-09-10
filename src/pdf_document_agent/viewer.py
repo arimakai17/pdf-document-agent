@@ -62,8 +62,6 @@ def render_page(
         draw.rectangle(
             coordinates,
             fill=(255, 220, 0, 70),
-            outline=(255, 110, 0, 255),
-            width=max(1, round(scale * 2)),
         )
     return image
 
