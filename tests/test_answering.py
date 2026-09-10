@@ -562,3 +562,78 @@ def test_answer_recovers_when_qwen_keeps_question_language_on_first_rewrite() ->
     assert answer.source_pages == (42,)
     assert len(rewrite_prompts) == 2
     assert "Target document language: English" in rewrite_prompts[1]
+
+
+def test_answer_uses_recent_question_to_resolve_follow_up_pronoun() -> None:
+    chunks = [
+        TextChunk(
+            index=0,
+            page_number=42,
+            text=(
+                "Software entropy causes disorder and software rot. Do not "
+                "leave broken windows unrepaired."
+            ),
+        ),
+        TextChunk(
+            index=1,
+            page_number=362,
+            text=(
+                "Thinking about tests: choose opened_video or completed_video "
+                "and inject a controlled database."
+            ),
+        ),
+    ]
+    rewrite_prompts: list[str] = []
+    answer_prompts: list[str] = []
+
+    def chat(system_prompt: str, user_prompt: str) -> str:
+        if system_prompt == _REWRITE_SYSTEM_PROMPT:
+            rewrite_prompts.append(user_prompt)
+            return "software entropy broken windows"
+        answer_prompts.append(user_prompt)
+        return "Не оставляйте «разбитые окна» неисправленными [стр. 42]."
+
+    answer = answer_question(
+        "как с ним бороться?",
+        chunks,
+        chat=chat,
+        previous_questions=("что такое энтропия программного обеспечения?",),
+    )
+
+    assert answer.source_pages == (42,)
+    assert "энтропия программного обеспечения" in rewrite_prompts[0]
+    assert "previous-user-questions" in rewrite_prompts[0]
+    assert "previous-user-questions" in answer_prompts[0]
+
+
+def test_answer_includes_following_chunks_for_section_continuation() -> None:
+    chunks = [
+        TextChunk(
+            index=0,
+            page_number=42,
+            text="Software entropy is increasing disorder and software rot.",
+        ),
+        TextChunk(
+            index=1,
+            page_number=43,
+            text="Fix each broken window as soon as it is discovered.",
+        ),
+        TextChunk(
+            index=2,
+            page_number=44,
+            text="Do not let entropy win through neglect.",
+        ),
+    ]
+
+    answer = answer_question(
+        "как с ней бороться?",
+        chunks,
+        chat=_rewriting_chat(
+            rewritten="software entropy",
+            answer="Исправляйте каждое «разбитое окно» сразу [стр. 43].",
+        ),
+        previous_questions=("Что такое энтропия программного обеспечения?",),
+    )
+
+    assert answer.source_pages == (43,)
+    assert answer.sources[0].excerpt.startswith("Fix each broken window")

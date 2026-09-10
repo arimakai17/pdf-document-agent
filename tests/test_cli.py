@@ -3,6 +3,7 @@ import pytest
 from pdf_document_agent import cli
 from pdf_document_agent.answering import GroundedAnswer
 from pdf_document_agent.extractor import ExtractedDocument, ExtractedPage
+from pdf_document_agent.retrieval import TextChunk
 
 
 @pytest.fixture
@@ -74,3 +75,45 @@ def test_main_without_question_preserves_markdown_output(
     assert "Документ: book.pdf" in output
     assert "Страниц: 1" in output
     assert "# Книга" in output
+
+
+def test_interactive_loop_passes_previous_questions_to_follow_up(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    inputs = iter(
+        (
+            "Что такое энтропия программного обеспечения?",
+            "Как с ней бороться?",
+            "exit",
+        )
+    )
+    calls: list[tuple[str, tuple[str, ...]]] = []
+
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(inputs))
+
+    def fake_answer_question(
+        question,
+        _chunks,
+        *,
+        chat,
+        previous_questions=(),
+    ) -> GroundedAnswer:
+        calls.append((question, tuple(previous_questions)))
+        return GroundedAnswer(text="Ответ [стр. 1].", source_pages=(1,))
+
+    monkeypatch.setattr(cli, "answer_question", fake_answer_question)
+
+    cli._interactive_loop(
+        "book.pdf",
+        1,
+        [TextChunk(index=0, page_number=1, text="Software entropy")],
+        lambda _system, _user: "unused",
+    )
+
+    assert calls == [
+        ("Что такое энтропия программного обеспечения?", ()),
+        (
+            "Как с ней бороться?",
+            ("Что такое энтропия программного обеспечения?",),
+        ),
+    ]

@@ -17,6 +17,7 @@ from pdf_document_agent.retrieval import TextChunk, chunk_document
 from pdf_document_agent.viewer import ViewerError, render_page
 
 MAX_FILE_BYTES = 50 * 1024 * 1024
+HISTORY_LIMIT_OPTIONS = (5, 10, 25, 50)
 
 
 @st.cache_data(show_spinner=False)
@@ -53,11 +54,39 @@ def _select_source(
     st.session_state.active_boxes = boxes
 
 
+def _select_history_item(
+    message_index: int,
+    page_number: int | None,
+    boxes: tuple[NormalizedBox, ...],
+) -> None:
+    st.session_state.selected_history_index = message_index
+    if page_number is not None:
+        _select_source(page_number, boxes)
+
+
+def _show_current_dialog() -> None:
+    st.session_state.selected_history_index = None
+
+
+def _trim_history(messages: list[dict], max_questions: int) -> bool:
+    """Оставить последние max_questions пар диалога в памяти сессии."""
+    question_indexes = [
+        index
+        for index, message in enumerate(messages)
+        if message.get("role") == "user"
+    ]
+    if len(question_indexes) <= max_questions:
+        return False
+    del messages[: question_indexes[-max_questions]]
+    return True
+
+
 def run_app() -> None:
     st.set_page_config(
         page_title="PDF Document Agent",
         page_icon="📄",
         layout="wide",
+        initial_sidebar_state="collapsed",
     )
     _apply_styles()
 
@@ -70,7 +99,13 @@ def run_app() -> None:
 
     with st.expander("Настройки модели"):
         model = st.text_input("Модель Ollama", value=DEFAULT_MODEL)
+        history_limit = st.selectbox(
+            "Хранить вопросов в истории",
+            options=HISTORY_LIMIT_OPTIONS,
+            index=1,
+        )
         st.caption("PDF обрабатывается локально и не отправляется в облако.")
+        st.caption("История хранится только до закрытия текущей сессии.")
 
     uploaded_file = st.file_uploader(
         "PDF-документ",
@@ -106,6 +141,7 @@ def run_app() -> None:
             messages=[],
             active_page=1,
             active_boxes=(),
+            selected_history_index=None,
         )
 
     document = st.session_state.document
@@ -156,16 +192,72 @@ def run_app() -> None:
 
     with conversation_panel:
         messages = st.session_state.messages
-        for message_index, message in enumerate(messages):
+        if _trim_history(messages, history_limit):
+            st.session_state.selected_history_index = None
+
+        question_indexes = [
+            index
+            for index, message in enumerate(messages)
+            if message["role"] == "user"
+        ]
+        with st.sidebar:
+            st.subheader("История вопросов")
+            st.caption("Только текущая сессия и текущий PDF")
+            selected_index = st.session_state.get("selected_history_index")
+            if selected_index is not None:
+                st.button(
+                    "Вернуться к текущему диалогу",
+                    key="history_current",
+                    on_click=_show_current_dialog,
+                )
+            if not question_indexes:
+                st.caption("История пока пуста")
+            for message_index in reversed(question_indexes):
+                question_text = messages[message_index]["content"]
+                label = (
+                    question_text
+                    if len(question_text) <= 48
+                    else f"{question_text[:45]}…"
+                )
+                answer_message = (
+                    messages[message_index + 1]
+                    if message_index + 1 < len(messages)
+                    and messages[message_index + 1]["role"] == "assistant"
+                    else None
+                )
+                sources = answer_message.get("sources", ()) if answer_message else ()
+                first_source = sources[0] if sources else None
+                st.button(
+                    label,
+                    key=f"history_{message_index}",
+                    on_click=_select_history_item,
+                    args=(
+                        message_index,
+                        first_source.page_number if first_source else None,
+                        first_source.boxes if first_source else (),
+                    ),
+                )
+
+        selected_index = st.session_state.get("selected_history_index")
+        visible_messages = list(enumerate(messages))
+        if (
+            isinstance(selected_index, int)
+            and 0 <= selected_index < len(messages)
+            and messages[selected_index]["role"] == "user"
+        ):
+            end = selected_index + 1
+            if end < len(messages) and messages[end]["role"] == "assistant":
+                end += 1
+            visible_messages = list(enumerate(messages[selected_index:end], selected_index))
+
+        for message_index, message in visible_messages:
             with st.chat_message(message["role"]):
                 st.write(message["content"])
                 if message["role"] != "assistant":
                     continue
                 for source_index, source in enumerate(message.get("sources", ())):
-                    st.caption(f"Страница {source.page_number}")
-                    st.caption(source.excerpt[:300])
                     st.button(
-                        f"Открыть источник · Страница {source.page_number}",
+                        f"Открыть стр. {source.page_number}",
                         key=f"source_{message_index}_{source_index}",
                         on_click=_select_source,
                         args=(source.page_number, source.boxes),
@@ -184,6 +276,12 @@ def run_app() -> None:
             st.warning("Сначала введи вопрос.")
             return
 
+        previous_questions = tuple(
+            message["content"]
+            for message in messages
+            if message["role"] == "user"
+        )
+        st.session_state.selected_history_index = None
         messages.append({"role": "user", "content": question})
         with st.chat_message("user"):
             st.write(question)
@@ -196,6 +294,7 @@ def run_app() -> None:
                     chat_with_ollama,
                     model=model.strip() or DEFAULT_MODEL,
                 ),
+                previous_questions=previous_questions,
             )
         except (ValueError, OllamaError, AnswerGenerationError) as error:
             st.error(str(error))
@@ -208,6 +307,7 @@ def run_app() -> None:
                 "sources": answer.sources,
             }
         )
+        _trim_history(messages, history_limit)
         if answer.sources:
             first_source = answer.sources[0]
             _select_source(first_source.page_number, first_source.boxes)

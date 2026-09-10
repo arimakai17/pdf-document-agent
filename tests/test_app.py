@@ -17,6 +17,8 @@ def test_app_starts_and_shows_pdf_uploader() -> None:
     assert not app.exception
     assert app.title[0].value == "Спроси свой PDF"
     assert len(app.get("file_uploader")) == 1
+    assert app.selectbox[0].label == "Хранить вопросов в истории"
+    assert app.selectbox[0].value == 10
     assert "Документ" in [item.value for item in app.subheader]
     assert "Диалог" in [item.value for item in app.subheader]
     assert "Загрузи PDF" in app.info[0].value

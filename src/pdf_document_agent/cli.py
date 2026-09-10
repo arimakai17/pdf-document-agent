@@ -91,6 +91,7 @@ def _interactive_loop(
 ) -> None:
     print(f"Документ готов: {source_name} ({page_count} стр.)")
     print("Задавай вопросы. Для выхода введи: выход")
+    previous_questions: list[str] = []
 
     while True:
         try:
@@ -104,9 +105,15 @@ def _interactive_loop(
             continue
 
         try:
-            answer = answer_question(question, chunks, chat=chat)
+            answer = answer_question(
+                question,
+                chunks,
+                chat=chat,
+                previous_questions=previous_questions,
+            )
         except (ValueError, OllamaError, AnswerGenerationError) as error:
             print(f"Ошибка: {error}")
             continue
+        previous_questions.append(question)
         print()
         _print_answer(answer)
