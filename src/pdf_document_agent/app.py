@@ -28,6 +28,74 @@ from pdf_document_agent.viewer import ViewerError, render_page
 MAX_FILE_BYTES = 50 * 1024 * 1024
 HISTORY_LIMIT_OPTIONS = (5, 10, 25, 50)
 
+_CAT_IDLE_SVG = """
+<svg class="mascot-cat mascot-cat-idle" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+  <g fill="#FF4D00" stroke="#1B1D21" stroke-width="1.5" stroke-linejoin="round">
+    <path class="mascot-tail" d="M31 41 C39 41 43 33 39 26 C37 22 33 23 34 28"
+          fill="none" stroke="#FF4D00" stroke-width="4" stroke-linecap="round"/>
+    <rect x="16" y="23" width="16" height="19" rx="8"/>
+    <path d="M18 12 L16 5 L23 10 Z"/>
+    <path d="M30 12 L32 5 L25 10 Z"/>
+    <circle cx="24" cy="18" r="8"/>
+  </g>
+  <g fill="#1B1D21">
+    <circle cx="21" cy="17.5" r="1.3"/>
+    <circle cx="27" cy="17.5" r="1.3"/>
+    <path d="M23.4 20.5 L24 21.4 L24.6 20.5 Z"/>
+  </g>
+  <g stroke="#1B1D21" stroke-width="1" fill="none" stroke-linecap="round">
+    <line x1="14.5" y1="17" x2="19" y2="17.5"/>
+    <line x1="14.5" y1="20.5" x2="19" y2="19.5"/>
+    <line x1="33.5" y1="17" x2="29" y2="17.5"/>
+    <line x1="33.5" y1="20.5" x2="29" y2="19.5"/>
+  </g>
+</svg>
+"""
+
+_CAT_BUSY_SVG = """
+<svg class="mascot-cat mascot-cat-busy" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+  <g fill="#FF4D00" stroke="#1B1D21" stroke-width="1.5" stroke-linejoin="round">
+    <path class="mascot-tail" d="M11 30 C4 27 2 20 6 15 C8 12 12 14 10 18"
+          fill="none" stroke="#FF4D00" stroke-width="4" stroke-linecap="round"/>
+    <g class="mascot-leg-b">
+      <rect x="14" y="33" width="3.5" height="11" rx="1.75"/>
+      <rect x="20" y="33" width="3.5" height="11" rx="1.75"/>
+    </g>
+    <g class="mascot-leg-f">
+      <rect x="31" y="33" width="3.5" height="11" rx="1.75"/>
+      <rect x="37" y="33" width="3.5" height="11" rx="1.75"/>
+    </g>
+    <g class="mascot-body">
+      <rect x="10" y="22" width="27" height="13" rx="6.5"/>
+      <circle cx="38" cy="18" r="6"/>
+      <path d="M35 13 L36 7 L40 11 Z"/>
+      <path d="M41 12 L42 7 L39 10 Z"/>
+    </g>
+  </g>
+  <g fill="#1B1D21">
+    <circle cx="40" cy="17" r="1.2"/>
+  </g>
+  <g stroke="#1B1D21" stroke-width="1" fill="none" stroke-linecap="round">
+    <line x1="41" y1="20" x2="44" y2="19"/>
+    <line x1="41" y1="22" x2="44" y2="22"/>
+  </g>
+</svg>
+"""
+
+
+def _mascot_markup(locale: Locale) -> str:
+    """Inline localized cat mascot; the idle/busy pose swap is driven by CSS."""
+    idle_label = text(locale, "mascot_idle")
+    busy_label = text(locale, "mascot_busy")
+    return (
+        '<div class="pdf-atlas-mascot">'
+        f'<span class="mascot-idle" role="img" aria-label="{idle_label}" '
+        f'title="{idle_label}">{_CAT_IDLE_SVG}</span>'
+        f'<span class="mascot-busy" role="img" aria-label="{busy_label}" '
+        f'title="{busy_label}">{_CAT_BUSY_SVG}</span>'
+        "</div>"
+    )
+
 
 def prepare_pdf(
     file_bytes: bytes,
@@ -120,6 +188,7 @@ def run_app() -> None:
         selected_locale if selected_locale in LOCALES else DEFAULT_LOCALE
     )
     _apply_styles(locale)
+    st.markdown(_mascot_markup(locale), unsafe_allow_html=True)
 
     with brand_panel:
         st.caption(text(locale, "eyebrow"))
@@ -555,6 +624,88 @@ def _apply_styles(locale: Locale) -> None:
         }
         ::-webkit-scrollbar-thumb:hover {
             background: var(--agent-accent);
+        }
+
+        /* --- animated status mascot ----------------------------------- */
+        .pdf-atlas-mascot {
+            position: fixed;
+            top: 0.15rem;
+            right: 0.75rem;
+            width: 44px;
+            height: 44px;
+            z-index: 1000010;
+            pointer-events: none;
+            line-height: 0;
+        }
+        .pdf-atlas-mascot svg {
+            width: 44px;
+            height: 44px;
+            display: block;
+            overflow: visible;
+        }
+        .mascot-idle { display: block; }
+        .mascot-busy { display: none; }
+
+        .mascot-idle .mascot-tail {
+            transform-box: fill-box;
+            transform-origin: 0% 50%;
+            animation: mascot-tail-wag 6s ease-in-out infinite;
+        }
+        @keyframes mascot-tail-wag {
+            0%, 88%, 100% { transform: rotate(0deg); }
+            92% { transform: rotate(-16deg); }
+            96% { transform: rotate(12deg); }
+        }
+        .mascot-busy .mascot-leg-f {
+            transform-box: fill-box;
+            transform-origin: 50% 0%;
+            animation: mascot-walk-f 0.5s ease-in-out infinite;
+        }
+        .mascot-busy .mascot-leg-b {
+            transform-box: fill-box;
+            transform-origin: 50% 0%;
+            animation: mascot-walk-b 0.5s ease-in-out infinite;
+        }
+        .mascot-busy .mascot-body {
+            animation: mascot-body-bob 0.5s ease-in-out infinite;
+        }
+        .mascot-busy .mascot-tail {
+            transform-box: fill-box;
+            transform-origin: 100% 50%;
+            animation: mascot-tail-sway 1s ease-in-out infinite;
+        }
+        @keyframes mascot-walk-f {
+            0%, 100% { transform: rotate(10deg); }
+            50% { transform: rotate(-10deg); }
+        }
+        @keyframes mascot-walk-b {
+            0%, 100% { transform: rotate(-10deg); }
+            50% { transform: rotate(10deg); }
+        }
+        @keyframes mascot-body-bob {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-1.5px); }
+        }
+        @keyframes mascot-tail-sway {
+            0%, 100% { transform: rotate(8deg); }
+            50% { transform: rotate(-8deg); }
+        }
+
+        @supports selector(body:has(*)) {
+            body:has([data-testid="stStatusWidgetRunningIcon"]) .pdf-atlas-mascot { right: 4.5rem; }
+            body:has([data-testid="stStatusWidgetRunningIcon"]) .mascot-idle { display: none; }
+            body:has([data-testid="stStatusWidgetRunningIcon"]) .mascot-busy { display: block; }
+            body:has([data-testid="stStatusWidgetRunningIcon"]) [data-testid="stStatusWidgetRunningIcon"] { visibility: hidden; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .mascot-idle .mascot-tail,
+            .mascot-busy .mascot-leg-f,
+            .mascot-busy .mascot-leg-b,
+            .mascot-busy .mascot-body,
+            .mascot-busy .mascot-tail {
+                animation: none !important;
+            }
         }
         </style>
         """,

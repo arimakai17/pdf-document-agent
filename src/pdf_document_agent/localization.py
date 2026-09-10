@@ -51,6 +51,8 @@ _COPY: Final[dict[Locale, dict[str, str]]] = {
         "submit": "Получить ответ",
         "empty_question": "Сначала введи вопрос.",
         "answer_error": "Не удалось получить подтверждённый документом ответ. Попробуй ещё раз.",
+        "mascot_idle": "PDF Atlas: ожидание",
+        "mascot_busy": "PDF Atlas: обработка",
     },
     "EN": {
         "language": "Interface language",
@@ -92,6 +94,8 @@ _COPY: Final[dict[Locale, dict[str, str]]] = {
         "submit": "Get answer",
         "empty_question": "Enter a question first.",
         "answer_error": "Could not produce an answer grounded in the document. Try again.",
+        "mascot_idle": "PDF Atlas: idle",
+        "mascot_busy": "PDF Atlas: working",
     },
 }
 
