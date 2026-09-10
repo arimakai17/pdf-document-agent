@@ -1,84 +1,99 @@
-# PDF Document Agent
+# PDF Atlas
 
-Учебный агент, который извлекает содержимое PDF и отвечает на вопросы по найденным фрагментам документа.
+Локальный учебный PDF QA-агент: извлекает текст и структуру документа, находит релевантные фрагменты и отвечает через Ollama со ссылками на страницы.
 
-## Текущий статус
+Проект предназначен для локальной демонстрации и проверки исходного кода. Публичный сервер и production-развёртывание не входят в scope.
 
-Готов полный учебный вертикальный срез:
+## Что реализовано
 
-- принимает локальный PDF и проверяет расширение, существование и результат обработки;
-- извлекает структуру и текст в Markdown через Docling;
-- включает OCR для сканов через macOS Vision (`ocrmac`, языки `ru-RU` и `en-US`);
-- сохраняет текст по страницам и разбивает его на перекрывающиеся фрагменты;
-- ищет контекст BM25-подобным лексическим ранжированием с coverage gate;
-- делает bounded LLM query rewrite на языке документа перед лексическим retrieval; если первая попытка не находит контекст, отдельно определяет язык PDF и повторяет rewrite с явным target language;
-- проверяет наличие ссылок вида `[стр. N]` и принадлежность страниц retrieved-контексту;
-- нормализует чистый отказ модели к каноническому тексту: `В документе недостаточно информации для ответа.`;
-- предоставляет старый режим вывода извлечённого Markdown, одноразовый вопрос и интерактивный CLI;
-- предоставляет Streamlit UI с загрузкой PDF, выбором модели и контекстным диалогом;
-- хранит настраиваемое число последних вопросов только в памяти текущей UI-сессии и позволяет открыть выбранный ответ вместе с его первой страницей-источником.
+- текстовые PDF и сканы до 50 МБ;
+- Docling extraction и OCR через macOS Vision (`ocrmac`, `ru-RU` + `en-US`);
+- сохранение структуры страниц и координат текстовых областей;
+- chunking с overlap и BM25-подобный лексический retrieval;
+- bounded LLM query rewrite с повторной попыткой на языке документа;
+- генерация ответа локальной моделью Ollama;
+- обязательные ссылки вида `[стр. N]` / `[p. N]` и проверка, что процитированные страницы присутствовали в retrieved-контексте;
+- канонический отказ, если документ не даёт достаточного контекста;
+- RU/EN Streamlit UI: split-view документа и диалога, навигация к источникам, подсветка связанных областей, история текущей сессии;
+- локальный дисковый JSON-кэш результатов extraction/chunking для 10 последних PDF;
+- CLI: extraction, одноразовый вопрос и интерактивный диалог;
+- анимированный индикатор состояния, не заменяющий нативную кнопку остановки Streamlit.
 
-Это не production-ready система и не обещает гарантированную groundedness: проверки ограничены тем, что можно проверить лексически и по страницам.
+Это завершённый учебный MVP, а не production-ready RAG-система. Проверки groundedness здесь лексические и структурные — они снижают риск неподтверждённого ответа, но не доказывают его фактическую истинность.
 
-## Поток данных
+## Архитектура
 
 ```text
-PDF-путь или загрузка в UI
-          │
-          ▼
-валидация PDF → Docling + macOS Vision OCR
-          │
-          ▼
-Markdown документа + страницы
-          │
-          ▼
-chunking (до 1 800 символов, overlap 250)
-          │
-          ▼
-LLM query rewrite на языке PDF
-          │
-          ▼
-BM25-подобный retrieval → coverage gate → top-k
-          │
-          ├─ пусто → определить язык PDF → rewrite retry → retrieval
-          │                                             │
-          │                                             └─ пусто → поиск исходного вопроса
-          │
-          ├─ нет релевантного контекста → канонический отказ
-          │
-          └─ есть контекст → локальный Ollama (qwen3:14b)
-                                      │
-                                      ▼
-                         citation membership check
-                                      │
-                   ┌──────────────────┴──────────────────┐
-                   ▼                                     ▼
-   GroundedAnswer со страницами            ошибка проверки ответа
+PDF path / Streamlit upload
+            │
+            ▼
+validation (PDF, non-empty, ≤ 50 MB)
+            │
+            ▼
+Docling + macOS Vision OCR
+            │
+            ▼
+ExtractedDocument (Markdown, pages, text regions)
+            │
+            ├──────────────► local JSON cache (UI only)
+            │
+            ▼
+chunking (≤ 1,800 chars, overlap 250)
+            │
+            ▼
+bounded query rewrite ──► BM25-like retrieval + coverage gate
+            │                         │
+            │                  no relevant context
+            │                         ▼
+            │              detect PDF language → rewrite retry
+            │                         │
+            │                  original-question fallback
+            │
+            ▼
+local Ollama (`qwen3:14b` by default)
+            │
+            ▼
+refusal / citation-page validation
+            │
+            ▼
+answer + cited source regions
 ```
 
-В prompt контекст помещается между `<document-context>` и `</document-context>` и помечается как недоверенные данные. Это снижает риск prompt injection, но не устраняет его.
+Документный контекст в prompt ограничен тегами `<document-context>` и помечен как недоверенные данные. Предыдущие вопросы используются только для разрешения ссылок и продолжения темы, а не как источник фактов.
 
 ## Требования
 
 - macOS 10.15 или новее;
 - Python 3.13;
 - [uv](https://docs.astral.sh/uv/);
-- работающий локальный Ollama на `http://127.0.0.1:11434`;
-- загруженная в Ollama модель `qwen3:14b` — модель по умолчанию.
+- локальный [Ollama](https://ollama.com/);
+- модель `qwen3:14b` либо другая совместимая модель Ollama.
 
-Проект использует macOS Vision OCR и потому ориентирован на macOS. Docling при первом запуске может скачать свои модели анализа документа. Для подготовки окружения в проекте проверяется команда `uv sync`; отдельные команды установки Ollama здесь не приводятся.
+Проект ориентирован на macOS из-за Vision OCR. При первом extraction Docling может скачать локальные модели анализа документа.
 
-## Запуск
+## Быстрый запуск UI
 
-Подготовить окружение:
+Из корня репозитория:
 
 ```bash
-uv sync
+uv sync --locked
+ollama pull qwen3:14b
+uv run streamlit run src/pdf_document_agent/app.py
 ```
 
-### Старый режим extraction
+Если Ollama не запущен автоматически, отдельно выполни:
 
-Без `--ask` и `--interactive` CLI извлекает PDF и печатает имя документа, число страниц и Markdown:
+```bash
+ollama serve
+```
+
+После старта открой URL, который напечатает Streamlit (обычно `http://localhost:8501`). Загрузи PDF, дождись extraction и задай вопрос по документу.
+
+В настройках UI можно сменить модель, ограничить историю и очистить локальный кэш.
+
+## CLI
+
+### Только extraction
 
 ```bash
 uv run pdf-document-agent /путь/к/document.pdf
@@ -90,10 +105,11 @@ uv run pdf-document-agent /путь/к/document.pdf
 uv run python -m pdf_document_agent /путь/к/document.pdf
 ```
 
-### Одноразовый вопрос
+### Один вопрос
 
 ```bash
-uv run pdf-document-agent /путь/к/document.pdf --ask "В чём основная идея документа?"
+uv run pdf-document-agent /путь/к/document.pdf \
+  --ask "В чём основная идея документа?"
 ```
 
 ### Интерактивный режим
@@ -102,59 +118,72 @@ uv run pdf-document-agent /путь/к/document.pdf --ask "В чём основ�
 uv run pdf-document-agent /путь/к/document.pdf --interactive
 ```
 
-Для выхода введите `выход`, `exit` или `quit`.
+Для выхода введи `выход`, `exit` или `quit`.
 
-### Выбор модели
+### Другая модель
 
 ```bash
-uv run pdf-document-agent /путь/к/document.pdf --ask "Что сказано о методе?" --model qwen3:14b
+uv run pdf-document-agent /путь/к/document.pdf \
+  --ask "Что сказано о методе?" \
+  --model qwen3:14b
 ```
 
-По умолчанию используется `qwen3:14b`. CLI также учитывает переменную окружения `PDF_AGENT_MODEL`.
+CLI также читает имя модели из `PDF_AGENT_MODEL`.
 
-### Streamlit UI
+## Локальные данные и границы безопасности
+
+- Клиент Ollama по умолчанию обращается только к loopback-адресу `http://127.0.0.1:11434`.
+- Исходный файл из UI записывается только во временный каталог на время extraction и затем удаляется; его байты остаются в памяти текущей Streamlit-сессии для просмотра страниц.
+- UI-кэш не хранит исходный PDF, но хранит извлечённый текст, страницы и координаты областей. По умолчанию он расположен в `~/.cache/pdf-document-agent/`.
+- Каталог кэша можно переопределить через `PDF_DOCUMENT_AGENT_CACHE_DIR`; очистить кэш можно из настроек UI.
+- История вопросов живёт только в текущей Streamlit-сессии и сбрасывается при смене документа или закрытии сессии.
+- Проект не требует API-ключей и не содержит встроенной авторизации. Поэтому его нельзя безопасно выставлять как открытый интернет-сервис без отдельного auth/resource-control слоя.
+
+## Проверка проекта
 
 ```bash
-uv run streamlit run src/pdf_document_agent/app.py
-```
-
-UI принимает один PDF до 50 МБ, обрабатывает его локально и показывает split-view: документ слева, диалог справа. Нажатие на источник переключает страницу и подсвечивает связанные области; поддельная подсветка не используется. Прямоугольники — это Docling layout/OCR-регионы, лексически связанные с процитированным фрагментом, а не точные spans токенов. Сворачиваемая боковая панель хранит только последние 5/10/25/50 вопросов текущей сессии и текущего PDF; между запусками история не сохраняется. Модель и лимит истории настраиваются в разделе «Настройки модели».
-
-## Тесты
-
-```bash
+uv lock --check
 uv run pytest -q
+uv run python -m compileall -q src tests
+uv build
 ```
+
+Тесты покрывают extraction seams, chunking/retrieval, query rewrite и fallback-сценарии, проверки ответа, Ollama API boundary, UI state/markup, кэш и PDF viewer. Реальные OCR/Docling/Ollama потоки частично заменены контролируемыми test doubles.
 
 ## Структура
 
 ```text
 src/pdf_document_agent/
-├── __init__.py       # публичная точка входа для CLI
+├── __init__.py       # публичная CLI-точка входа
 ├── __main__.py       # запуск через python -m
 ├── cli.py            # extraction, --ask, --interactive, --model
-├── app.py            # Streamlit UI и загрузка PDF
-├── extractor.py      # Docling, страницы и macOS Vision OCR
-├── retrieval.py      # chunking, токенизация и BM25-подобный поиск
-├── answering.py      # rewrite, prompt, citations и отказ
-└── ollama.py         # локальный Ollama API и модель по умолчанию
+├── app.py            # Streamlit UI и orchestration загрузки
+├── extractor.py      # Docling и macOS Vision OCR
+├── retrieval.py      # chunking, токенизация, coverage gate, ranking
+├── answering.py      # rewrite, prompt, отказ, citations, source selection
+├── ollama.py         # локальный Ollama HTTP boundary
+├── cache.py          # версионированный атомарный JSON-кэш
+├── viewer.py         # рендер страницы и source-region overlays
+└── localization.py   # RU/EN UI-копирайт
 
 tests/
+├── test_app.py
 ├── test_answering.py
+├── test_cache.py
 ├── test_cli.py
 ├── test_extractor.py
 ├── test_ollama.py
-└── test_retrieval.py
+├── test_retrieval.py
+└── test_viewer.py
 ```
 
-## Ограничения учебного MVP
+## Ограничения MVP
 
-- Retrieval работает по точным лексическим токенам: нет морфологии, лемматизации и embeddings.
-- Coverage gate проверяет лексическое совпадение для retrieval, но не доказывает семантическую истинность ответа.
-- Citation membership проверяет формат и принадлежность страниц retrieved-контексту, а не factual groundedness утверждения; cross-language paraphrase допустим.
+- Retrieval основан на точных лексических токенах: нет embeddings, морфологии и лемматизации.
+- Coverage gate проверяет совпадение терминов, а не семантическую релевантность.
+- Проверка citations подтверждает формат и принадлежность страницы retrieved-контексту, но не factual groundedness каждого утверждения.
 - Prompt delimiters и инструкции о недоверенном контексте снижают, но не устраняют prompt injection.
-- OCR backend использует macOS Vision и не является переносимым на Linux/Windows без замены backend.
-- Retrieval хранит данные в памяти и имеет O(N)-проход по фрагментам при поиске.
-- Нет agent tool loop, долговременной памяти или внешних инструментов.
-- Реальные Docling/OCR/Ollama/UI-upload flows не полностью покрыты unit tests; часть тестов проверяет seams без запуска всех внешних систем.
-- OCR может ошибаться на маленьком, размытом или низкоконтрастном тексте.
+- OCR backend не переносим на Linux/Windows без замены macOS Vision.
+- Поиск выполняет O(N)-проход по фрагментам и рассчитан на локальный учебный масштаб.
+- Нет agent tool loop, долговременной памяти, multi-user isolation, авторизации, rate limiting и resource quotas.
+- Качество OCR падает на маленьком, размытом и низкоконтрастном тексте.
