@@ -2,6 +2,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from pdf_document_agent.extractor import NormalizedBox
 from pdf_document_agent.retrieval import (
     SearchResult,
     TextChunk,
@@ -31,11 +32,21 @@ class AnswerGenerationError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class CitedSource:
+    """Конкретный процитированный источник: страница, отрывок и реальные boxes."""
+
+    page_number: int
+    excerpt: str
+    boxes: tuple[NormalizedBox, ...] = ()
+
+
+@dataclass(frozen=True)
 class GroundedAnswer:
     """Ответ модели и страницы контекста, на которых он основан."""
 
     text: str
     source_pages: tuple[int, ...]
+    sources: tuple[CitedSource, ...] = ()
 
 
 def answer_question(
@@ -84,7 +95,33 @@ def answer_question(
             "Ответ имеет недостаточную лексическую опору в процитированном фрагменте."
         )
 
-    return GroundedAnswer(text=text, source_pages=cited_pages)
+    sources = _build_sources(cited_pages, results)
+    return GroundedAnswer(text=text, source_pages=cited_pages, sources=sources)
+
+
+def _build_sources(
+    cited_pages: tuple[int, ...],
+    results: list[SearchResult],
+) -> tuple[CitedSource, ...]:
+    """Для каждой cited page выбрать лучший (по score) retrieved chunk на этой странице."""
+    best_by_page: dict[int, SearchResult] = {}
+    for result in results:
+        page = result.chunk.page_number
+        if page not in cited_pages:
+            continue
+        current = best_by_page.get(page)
+        if current is None or result.score > current.score:
+            best_by_page[page] = result
+
+    return tuple(
+        CitedSource(
+            page_number=page,
+            excerpt=best_by_page[page].chunk.text,
+            boxes=best_by_page[page].chunk.boxes,
+        )
+        for page in cited_pages
+        if page in best_by_page
+    )
 
 
 def _claim_supported(text: str, cited_chunks: list[TextChunk]) -> bool:

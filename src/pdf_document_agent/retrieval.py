@@ -3,7 +3,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass
 
-from pdf_document_agent.extractor import ExtractedDocument
+from pdf_document_agent.extractor import ExtractedDocument, NormalizedBox, TextRegion
 
 
 _WORD_PATTERN = re.compile(r"[^\W_]+(?:[-'][^\W_]+)*", re.UNICODE)
@@ -99,6 +99,7 @@ class TextChunk:
     index: int
     page_number: int
     text: str
+    boxes: tuple[NormalizedBox, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -130,12 +131,14 @@ def chunk_document(
 
     chunks: list[TextChunk] = []
     for page in document.pages:
+        regions = getattr(page, "regions", ())
         for text in _split_text(page.markdown, max_chars, overlap_chars):
             chunks.append(
                 TextChunk(
                     index=len(chunks),
                     page_number=page.number,
                     text=text,
+                    boxes=_boxes_for_chunk(text, regions),
                 )
             )
     return chunks
@@ -188,6 +191,35 @@ def search_chunks(
 
     scored.sort(key=lambda result: (-result.score, result.chunk.index))
     return scored[:top_k]
+
+
+def _boxes_for_chunk(
+    chunk_text: str,
+    regions: tuple[TextRegion, ...],
+) -> tuple[NormalizedBox, ...]:
+    """Сопоставить фрагменту реальные boxes по лексическому перекрытию токенов.
+
+    Используется только provenance регионов на той же странице (они уже лежат в
+    `regions` страницы) и положительное перекрытие токенов между текстом фрагмента
+    и текстом региона. Детерминированный минимальный алгоритм, без нового retrieval.
+    """
+    if not regions:
+        return ()
+    chunk_tokens = set(_tokenize(chunk_text))
+    if not chunk_tokens:
+        return ()
+
+    boxes: list[NormalizedBox] = []
+    seen: set[NormalizedBox] = set()
+    for region in regions:
+        region_tokens = set(_tokenize(region.text))
+        if not region_tokens:
+            continue
+        if chunk_tokens & region_tokens:
+            if region.box not in seen:
+                seen.add(region.box)
+                boxes.append(region.box)
+    return tuple(boxes)
 
 
 def _tokenize(text: str) -> list[str]:

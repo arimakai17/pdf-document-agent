@@ -7,8 +7,8 @@ from pdf_document_agent.answering import (
     AnswerGenerationError,
     answer_question,
 )
-from pdf_document_agent.extractor import ExtractedDocument, ExtractedPage
-from pdf_document_agent.retrieval import chunk_document
+from pdf_document_agent.extractor import ExtractedDocument, ExtractedPage, TextRegion
+from pdf_document_agent.retrieval import chunk_document, search_chunks
 
 
 def make_chunks(*pages: str):
@@ -224,3 +224,93 @@ def test_prompt_preserves_instruction_looking_chunk_text() -> None:
     answer_question("Кто создал Python?", chunks, chat=fake_chat, top_k=1)
 
     assert injected in captured["user"]
+
+
+def test_answer_exposes_cited_sources_with_excerpts() -> None:
+    chunks = make_chunks(
+        "Париж является столицей Франции.",
+        "Python создал Гвидо ван Россум в конце 1980-х годов.",
+    )
+
+    def fake_chat(_system: str, _user: str) -> str:
+        return "Python создал Гвидо ван Россум [стр. 2]."
+
+    answer = answer_question(
+        "Кто создал Python?", chunks, chat=fake_chat, top_k=2
+    )
+
+    assert answer.source_pages == (2,)
+    assert len(answer.sources) == 1
+    source = answer.sources[0]
+    assert source.page_number == 2
+    assert "Гвидо ван Россум" in source.excerpt
+
+
+def test_answer_selects_best_chunk_per_cited_page() -> None:
+    document = ExtractedDocument(
+        source_name="book.pdf",
+        markdown="Python создал Гвидо ван Россум. " * 50,
+        page_count=1,
+        pages=(
+            ExtractedPage(
+                number=1,
+                markdown="Python создал Гвидо ван Россум. " * 50,
+            ),
+        ),
+    )
+    chunks = chunk_document(document, max_chars=120, overlap_chars=20)
+
+    def fake_chat(_system: str, _user: str) -> str:
+        return "Python создал Гвидо ван Россум [стр. 1]."
+
+    answer = answer_question(
+        "Кто создал Python?", chunks, chat=fake_chat, top_k=2
+    )
+
+    assert answer.source_pages == (1,)
+    assert len(answer.sources) == 1
+    best = search_chunks("Кто создал Python?", chunks, top_k=2)[0].chunk
+    assert answer.sources[0].excerpt == best.text
+
+
+def test_answer_source_boxes_flow_from_chunk_provenance() -> None:
+    document = ExtractedDocument(
+        source_name="book.pdf",
+        markdown="Python создал Гвидо ван Россум.",
+        page_count=1,
+        pages=(
+            ExtractedPage(
+                number=1,
+                markdown="Python создал Гвидо ван Россум.",
+                regions=(
+                    TextRegion(
+                        page_number=1,
+                        text="Python создал Гвидо ван Россум.",
+                        box=(0.1, 0.2, 0.5, 0.3),
+                    ),
+                ),
+            ),
+        ),
+    )
+    chunks = chunk_document(document)
+
+    def fake_chat(_system: str, _user: str) -> str:
+        return "Python создал Гвидо ван Россум [стр. 1]."
+
+    answer = answer_question("Кто создал Python?", chunks, chat=fake_chat)
+
+    assert answer.sources[0].boxes == ((0.1, 0.2, 0.5, 0.3),)
+
+
+def test_refusal_has_no_sources() -> None:
+    chunks = make_chunks("Кошка спит на подоконнике.")
+
+    answer = answer_question(
+        "Как устроен ядерный реактор?",
+        chunks,
+        chat=lambda _system, _user: "не вызывается",
+    )
+
+    assert answer.text == INSUFFICIENT_ANSWER
+    assert answer.source_pages == ()
+    assert answer.sources == ()

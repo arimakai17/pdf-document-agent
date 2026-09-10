@@ -1,7 +1,7 @@
 import pytest
 
-from pdf_document_agent.extractor import ExtractedDocument, ExtractedPage
-from pdf_document_agent.retrieval import chunk_document, search_chunks
+from pdf_document_agent.extractor import ExtractedDocument, ExtractedPage, TextRegion
+from pdf_document_agent.retrieval import TextChunk, chunk_document, search_chunks
 
 
 def make_document(*pages: str) -> ExtractedDocument:
@@ -68,3 +68,72 @@ def test_search_chunks_keeps_chunk_with_sufficient_coverage() -> None:
 
     assert results
     assert results[0].chunk.page_number == 1
+
+
+def _document_with_regions(*pages: tuple[str, tuple[TextRegion, ...]]) -> ExtractedDocument:
+    return ExtractedDocument(
+        source_name="book.pdf",
+        markdown="\n\n".join(text for text, _ in pages),
+        page_count=len(pages),
+        pages=tuple(
+            ExtractedPage(number=number, markdown=text, regions=regions)
+            for number, (text, regions) in enumerate(pages, start=1)
+        ),
+    )
+
+
+def test_chunk_document_attaches_boxes_from_same_page_regions() -> None:
+    document = _document_with_regions(
+        (
+            "Париж является столицей Франции.",
+            (
+                TextRegion(
+                    page_number=1,
+                    text="Париж является столицей Франции.",
+                    box=(0.1, 0.1, 0.5, 0.2),
+                ),
+            ),
+        ),
+        (
+            "Язык Python создал Гвидо ван Россум.",
+            (
+                TextRegion(
+                    page_number=2,
+                    text="Язык Python создал Гвидо ван Россум.",
+                    box=(0.2, 0.2, 0.6, 0.3),
+                ),
+            ),
+        ),
+    )
+
+    chunks = chunk_document(document)
+
+    page1 = [chunk for chunk in chunks if chunk.page_number == 1]
+    page2 = [chunk for chunk in chunks if chunk.page_number == 2]
+    assert page1[0].boxes == ((0.1, 0.1, 0.5, 0.2),)
+    assert page2[0].boxes == ((0.2, 0.2, 0.6, 0.3),)
+
+
+def test_chunk_without_lexical_overlap_has_no_boxes() -> None:
+    document = _document_with_regions(
+        (
+            "Совершенно другой текст про квантовую физику.",
+            (
+                TextRegion(
+                    page_number=1,
+                    text="Несвязанный регион",
+                    box=(0.1, 0.1, 0.2, 0.2),
+                ),
+            ),
+        ),
+    )
+
+    chunks = chunk_document(document)
+
+    assert chunks[0].boxes == ()
+
+
+def test_text_chunk_default_constructor_has_empty_boxes() -> None:
+    chunk = TextChunk(index=0, page_number=1, text="текст")
+
+    assert chunk.boxes == ()
