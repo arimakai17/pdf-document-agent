@@ -21,6 +21,26 @@ _REFUSALS = (
     ("недостаточно информации", frozenset(_tokenize(INSUFFICIENT_ANSWER))),
     ("does not contain enough information", frozenset(_tokenize(INSUFFICIENT_ANSWER_EN))),
 )
+# Явный chapter-intent распознаётся только при маркере слова «глава»/«chapter»
+# рядом с цифрой, без словарей числительных. Односимвольные цифры (например «6»)
+# общий tokenizer отбрасывает, поэтому номер главы извлекается детерминированным
+# regex-путём до rewrite/BM25. Номер страницы без маркера главой не считается.
+_CHAPTER_WORD = r"(?:глава|главы|главе|главу|главах|chapter)"
+_CHAPTER_ORDINAL_SUFFIX = r"(?:ой|ый|ий|ая|ое|ее|яя|его|ому|ом|ую|й|я|е|th|st|nd|rd)"
+_CHAPTER_NUMBER_BEFORE = re.compile(
+    rf"(\d{{1,3}})[\s\-—]*(?:{_CHAPTER_ORDINAL_SUFFIX})?[\s\-—]*{_CHAPTER_WORD}",
+    re.IGNORECASE,
+)
+_CHAPTER_NUMBER_AFTER = re.compile(
+    rf"{_CHAPTER_WORD}[\s\-—]*(?:№[\s\-—]*)?(\d{{1,3}})",
+    re.IGNORECASE,
+)
+# Структурный заголовок главы в тексте фрагмента: строка, начинающаяся с
+# необязательных «#», за которыми следует «Chapter N»/«Глава N».
+_CHAPTER_HEADING = re.compile(
+    r"(?m)^\s*#{0,6}\s*(?:chapter|глава)\s+(\d+)\b",
+    re.IGNORECASE,
+)
 _SYSTEM_PROMPT = f"""Ты — естественный и компетентный собеседник, который хорошо понимает предоставленный PDF-документ.
 Сразу отвечай на намерение пользователя простым человеческим языком. Не повторяй вопрос и не заменяй ответ новым вопросом, если уточнение действительно не требуется.
 Объясняй смысл, причинно-следственные связи и практический вывод, когда это поддерживается отрывками.
@@ -120,35 +140,44 @@ def answer_question(
     if answer_language not in (None, "Russian", "English"):
         raise ValueError("Поддерживаются только Russian и English.")
     insufficient_answer = _insufficient_answer(answer_language)
-    rewritten = _rewrite_search_query(
-        question,
-        chunks,
-        chat,
-        previous_questions=previous_questions,
-    )
-    results = (
-        search_chunks(rewritten, chunks, top_k=top_k) if rewritten else []
-    )
 
-    if not results:
-        document_language = _detect_document_language(chunks, chat)
-        if document_language:
-            rewritten = _rewrite_search_query(
-                question,
-                chunks,
-                chat,
-                target_language=document_language,
-                previous_questions=previous_questions,
-            )
-            if rewritten:
-                results = search_chunks(rewritten, chunks, top_k=top_k)
+    results: list[SearchResult] = []
+    is_structural = False
+    chapter_number = _detect_chapter_number(question)
+    if chapter_number is not None:
+        results = _structural_chapter_results(chunks, chapter_number, top_k=top_k)
+        is_structural = bool(results)
 
-    if not results:
-        results = search_chunks(question, chunks, top_k=top_k)
-    if not results:
-        return GroundedAnswer(text=insufficient_answer, source_pages=())
-    if previous_questions:
-        results = _add_adjacent_context(results, chunks, limit=top_k)
+    if not is_structural:
+        rewritten = _rewrite_search_query(
+            question,
+            chunks,
+            chat,
+            previous_questions=previous_questions,
+        )
+        results = (
+            search_chunks(rewritten, chunks, top_k=top_k) if rewritten else []
+        )
+
+        if not results:
+            document_language = _detect_document_language(chunks, chat)
+            if document_language:
+                rewritten = _rewrite_search_query(
+                    question,
+                    chunks,
+                    chat,
+                    target_language=document_language,
+                    previous_questions=previous_questions,
+                )
+                if rewritten:
+                    results = search_chunks(rewritten, chunks, top_k=top_k)
+
+        if not results:
+            results = search_chunks(question, chunks, top_k=top_k)
+        if not results:
+            return GroundedAnswer(text=insufficient_answer, source_pages=())
+        if previous_questions:
+            results = _add_adjacent_context(results, chunks, limit=top_k)
 
     user_prompt = _build_user_prompt(
         question,
@@ -360,6 +389,62 @@ def _add_adjacent_context(
         if len(expanded) >= limit:
             break
     return expanded
+
+
+def _detect_chapter_number(question: str) -> int | None:
+    """Вернуть номер главы, если вопрос явно спрашивает про конкретную главу.
+
+    Требуется маркер слова «глава»/«chapter» рядом с цифрой; просто номер
+    страницы (без маркера) главой не считается. Возвращает None, когда
+    chapter-intent не распознан, — тогда сохраняется обычный rewrite/search.
+    """
+    match = _CHAPTER_NUMBER_BEFORE.search(question) or _CHAPTER_NUMBER_AFTER.search(
+        question
+    )
+    if not match:
+        return None
+    return int(match.group(1))
+
+
+def _find_chapter_heading_position(
+    chunks: list[TextChunk],
+    number: int,
+) -> int | None:
+    """Индекс первого фрагмента со структурным заголовком «Chapter/Глава N»."""
+    for position, chunk in enumerate(chunks):
+        for match in _CHAPTER_HEADING.finditer(chunk.text):
+            if int(match.group(1)) == number:
+                return position
+    return None
+
+
+def _structural_chapter_results(
+    chunks: list[TextChunk],
+    number: int,
+    *,
+    top_k: int,
+) -> list[SearchResult]:
+    """Ограниченный контекст заголовка главы: anchor + непосредственное продолжение.
+
+    Собирает anchor-фрагмент с заголовком и следующие за ним фрагменты вплоть до
+    следующего явного заголовка главы или лимита top_k. Все результаты синтетические
+    (score 0, пустые highlight_boxes): межъязыковой вопрос не имеет лексического
+    совпадения с английским текстом, поэтому query-specific подсветка не выводится.
+    Возвращает пустой список, если заголовок не найден.
+    """
+    position = _find_chapter_heading_position(chunks, number)
+    if position is None:
+        return []
+
+    results: list[SearchResult] = []
+    index = position
+    while index < len(chunks) and len(results) < top_k:
+        chunk = chunks[index]
+        if index > position and _CHAPTER_HEADING.search(chunk.text):
+            break
+        results.append(SearchResult(chunk=chunk, score=0.0))
+        index += 1
+    return results
 
 
 def _build_sources(

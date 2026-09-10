@@ -8,6 +8,7 @@ from pdf_document_agent.answering import (
     AnswerGenerationError,
     _LANGUAGE_SYSTEM_PROMPT,
     _REWRITE_SYSTEM_PROMPT,
+    _detect_chapter_number,
     _rewrite_search_query,
     answer_question,
 )
@@ -772,3 +773,67 @@ def test_unmatched_adjacent_context_has_no_false_highlight() -> None:
     )
 
     assert answer.sources[0].boxes == ()
+
+
+def test_answer_chapter_intent_finds_structural_heading() -> None:
+    chunks = make_chunks(
+        "Chapter 5 is about flexibility and adapting to change.",
+        "## Chapter 6\n\n## Concurrency\n\nJust so we're all on the same page.",
+        "Concurrency means pieces of code execute as if simultaneously.",
+        "## Chapter 7\n\n## Coding\n\nCoding is writing the program itself.",
+    )
+    answer_prompt: str | None = None
+
+    def chat(system_prompt: str, user_prompt: str) -> str:
+        nonlocal answer_prompt
+        if system_prompt == _REWRITE_SYSTEM_PROMPT:
+            return "что говорится в 6 главе"
+        if system_prompt == _LANGUAGE_SYSTEM_PROMPT:
+            return "English"
+        answer_prompt = user_prompt
+        return (
+            "Глава 6 посвящена конкурентности — одновременному выполнению "
+            "фрагментов кода [стр. 3]."
+        )
+
+    answer = answer_question("о чем говориться в 6 ой главе?", chunks, chat=chat)
+
+    assert answer.text != INSUFFICIENT_ANSWER
+    assert answer.source_pages == (3,)
+    assert answer_prompt is not None
+    assert "Chapter 6" in answer_prompt
+    assert "Concurrency" in answer_prompt
+    assert "simultaneously" in answer_prompt
+    assert "Chapter 7" not in answer_prompt
+    assert answer.sources[0].boxes == ()
+
+
+@pytest.mark.parametrize(
+    ("question", "expected"),
+    [
+        ("о чем говориться в 6 ой главе?", 6),
+        ("О чём говорится в 6-ой главе?", 6),
+        ("что в 6-й главе?", 6),
+        ("что в 6ая главе?", 6),
+        ("о чем глава 6?", 6),
+        ("what is chapter 6 about?", 6),
+        ("what is in the 6th chapter?", 6),
+        ("о чем 12 глава?", 12),
+    ],
+)
+def test_detect_chapter_number_variants(question: str, expected: int) -> None:
+    assert _detect_chapter_number(question) == expected
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "что на странице 6?",
+        "что на 6 странице?",
+        "как устроен ядерный реактор?",
+        "что говорится в шестой главе?",
+    ],
+)
+def test_detect_chapter_number_requires_chapter_marker(question: str) -> None:
+    assert _detect_chapter_number(question) is None
+
