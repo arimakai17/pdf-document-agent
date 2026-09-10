@@ -1,4 +1,5 @@
 import hashlib
+import json
 import tempfile
 from functools import partial
 from pathlib import Path
@@ -11,6 +12,13 @@ from pdf_document_agent.extractor import (
     NormalizedBox,
     PdfExtractionError,
     extract_pdf,
+)
+from pdf_document_agent.localization import (
+    ANSWER_LANGUAGE,
+    DEFAULT_LOCALE,
+    LOCALES,
+    Locale,
+    text,
 )
 from pdf_document_agent.ollama import DEFAULT_MODEL, OllamaError, chat_with_ollama
 from pdf_document_agent.retrieval import TextChunk, chunk_document
@@ -83,55 +91,76 @@ def _trim_history(messages: list[dict], max_questions: int) -> bool:
 
 def run_app() -> None:
     st.set_page_config(
-        page_title="PDF Document Agent",
+        page_title="PDF Atlas",
         page_icon="📄",
         layout="wide",
         initial_sidebar_state="collapsed",
     )
-    _apply_styles()
+    if st.session_state.get("ui_locale") not in LOCALES:
+        st.session_state.ui_locale = DEFAULT_LOCALE
 
-    st.caption("LOCAL DOCUMENT INTELLIGENCE · OLLAMA + DOCLING")
-    st.title("Спроси свой PDF")
-    st.write(
-        "Загрузи книгу, статью или скан. Агент отвечает только по документу "
-        "и указывает страницы источников."
+    brand_panel, language_panel = st.columns([8, 1], vertical_alignment="top")
+    with language_panel:
+        selected_locale = st.segmented_control(
+            text(st.session_state.ui_locale, "language"),
+            options=LOCALES,
+            key="ui_locale",
+            required=True,
+            label_visibility="collapsed",
+        )
+    locale: Locale = (
+        selected_locale if selected_locale in LOCALES else DEFAULT_LOCALE
     )
+    _apply_styles(locale)
 
-    with st.expander("Настройки модели"):
-        model = st.text_input("Модель Ollama", value=DEFAULT_MODEL)
+    with brand_panel:
+        st.caption(text(locale, "eyebrow"))
+        st.title("PDF Atlas")
+        st.write(text(locale, "intro"))
+
+    with st.expander(text(locale, "settings")):
+        model = st.text_input(
+            text(locale, "model"),
+            value=DEFAULT_MODEL,
+            key="ollama_model",
+        )
         history_limit = st.selectbox(
-            "Хранить вопросов в истории",
+            text(locale, "history_limit"),
             options=HISTORY_LIMIT_OPTIONS,
             index=1,
+            key="history_limit",
         )
-        st.caption("PDF обрабатывается локально и не отправляется в облако.")
-        st.caption("История хранится только до закрытия текущей сессии.")
+        st.caption(text(locale, "local_processing"))
+        st.caption(text(locale, "session_history"))
 
     uploaded_file = st.file_uploader(
-        "PDF-документ",
+        text(locale, "uploader"),
         type="pdf",
         accept_multiple_files=False,
-        help="Поддерживаются text-based PDF и сканы до 50 МБ.",
+        help=text(locale, "uploader_help"),
+        key="pdf_uploader",
     )
 
     document_panel, conversation_panel = st.columns(2)
     with document_panel:
-        st.subheader("Документ")
+        with st.container(key="document_heading"):
+            st.subheader(text(locale, "document"))
     with conversation_panel:
-        st.subheader("Диалог")
+        with st.container(key="conversation_heading"):
+            st.subheader(text(locale, "conversation"))
 
     if uploaded_file is None:
-        st.info("Загрузи PDF, чтобы начать диалог.")
+        st.info(text(locale, "upload_prompt"))
         return
 
     file_bytes = uploaded_file.getvalue()
     file_id = hashlib.sha256(file_bytes).hexdigest()
     if st.session_state.get("file_id") != file_id:
         try:
-            with st.spinner("Извлекаю текст, структуру и страницы…"):
+            with st.spinner(text(locale, "processing")):
                 document, chunks = prepare_pdf(file_bytes, uploaded_file.name)
-        except (FileNotFoundError, ValueError, PdfExtractionError) as error:
-            st.error(str(error))
+        except (FileNotFoundError, ValueError, PdfExtractionError):
+            st.error(text(locale, "pdf_error"))
             return
         st.session_state.update(
             file_id=file_id,
@@ -147,8 +176,13 @@ def run_app() -> None:
     document = st.session_state.document
     chunks = st.session_state.chunks
     st.success(
-        f"Готово: {uploaded_file.name} · {document.page_count} стр. · "
-        f"{len(chunks)} фрагм."
+        text(
+            locale,
+            "ready",
+            name=uploaded_file.name,
+            pages=document.page_count,
+            chunks=len(chunks),
+        )
     )
 
     with document_panel:
@@ -163,32 +197,32 @@ def run_app() -> None:
                 boxes=st.session_state.get("active_boxes", ()),
                 scale=1.5,
             )
-        except ViewerError as error:
-            st.error(str(error))
+        except ViewerError:
+            st.error(text(locale, "viewer_error"))
             image = None
         if image is not None:
             st.image(image, width="stretch")
 
-        st.caption(f"Страница {page_number}/{document.page_count}")
+        st.caption(
+            text(locale, "page", current=page_number, total=document.page_count)
+        )
         previous, next_page = st.columns(2)
         previous.button(
-            "Предыдущая",
+            text(locale, "previous"),
             disabled=page_number <= 1,
             key="viewer_prev",
             on_click=_select_source,
             args=(page_number - 1, ()),
         )
         next_page.button(
-            "Следующая",
+            text(locale, "next"),
             disabled=page_number >= document.page_count,
             key="viewer_next",
             on_click=_select_source,
             args=(page_number + 1, ()),
         )
         if st.session_state.get("active_boxes"):
-            st.caption(
-                "Выделены области источника; это не точная подсветка слов."
-            )
+            st.caption(text(locale, "highlight_note"))
 
     with conversation_panel:
         messages = st.session_state.messages
@@ -201,17 +235,17 @@ def run_app() -> None:
             if message["role"] == "user"
         ]
         with st.sidebar:
-            st.subheader("История вопросов")
-            st.caption("Только текущая сессия и текущий PDF")
+            st.subheader(text(locale, "history"))
+            st.caption(text(locale, "history_scope"))
             selected_index = st.session_state.get("selected_history_index")
             if selected_index is not None:
                 st.button(
-                    "Вернуться к текущему диалогу",
+                    text(locale, "return_current"),
                     key="history_current",
                     on_click=_show_current_dialog,
                 )
             if not question_indexes:
-                st.caption("История пока пуста")
+                st.caption(text(locale, "history_empty"))
             for message_index in reversed(question_indexes):
                 question_text = messages[message_index]["content"]
                 label = (
@@ -257,7 +291,7 @@ def run_app() -> None:
                     continue
                 for source_index, source in enumerate(message.get("sources", ())):
                     st.button(
-                        f"Открыть стр. {source.page_number}",
+                        text(locale, "open_source", page=source.page_number),
                         key=f"source_{message_index}_{source_index}",
                         on_click=_select_source,
                         args=(source.page_number, source.boxes),
@@ -265,15 +299,19 @@ def run_app() -> None:
 
         with st.form("question_form", clear_on_submit=True):
             question = st.text_input(
-                "Вопрос по документу",
-                placeholder="Например: в чём основная идея второй главы?",
+                text(locale, "question"),
+                placeholder=text(locale, "question_placeholder"),
+                key="question",
             )
-            submitted = st.form_submit_button("Получить ответ", type="primary")
+            submitted = st.form_submit_button(
+                text(locale, "submit"),
+                type="primary",
+            )
 
         if not submitted:
             return
         if not question.strip():
-            st.warning("Сначала введи вопрос.")
+            st.warning(text(locale, "empty_question"))
             return
 
         previous_questions = tuple(
@@ -295,9 +333,10 @@ def run_app() -> None:
                     model=model.strip() or DEFAULT_MODEL,
                 ),
                 previous_questions=previous_questions,
+                answer_language=ANSWER_LANGUAGE[locale],
             )
-        except (ValueError, OllamaError, AnswerGenerationError) as error:
-            st.error(str(error))
+        except (ValueError, OllamaError, AnswerGenerationError):
+            st.error(text(locale, "answer_error"))
             return
 
         messages.append(
@@ -314,7 +353,7 @@ def run_app() -> None:
         st.rerun()
 
 
-def _apply_styles() -> None:
+def _apply_styles(locale: Locale) -> None:
     st.markdown(
         """
         <style>
@@ -337,6 +376,9 @@ def _apply_styles() -> None:
         }
         [data-testid="stHeader"] {
             background: var(--agent-bg);
+        }
+        [data-testid="stToolbar"] {
+            display: none;
         }
         [data-testid="stSidebar"] {
             background: var(--agent-surface);
@@ -490,6 +532,65 @@ def _apply_styles() -> None:
         ::-webkit-scrollbar-thumb:hover {
             background: var(--agent-accent);
         }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    dropzone_copy = json.dumps(text(locale, "dropzone"), ensure_ascii=False)
+    dropzone_limit = json.dumps(text(locale, "dropzone_limit"), ensure_ascii=False)
+    st.markdown(
+        f"""
+        <style>
+        .st-key-ui_locale {{
+            display: flex;
+            justify-content: flex-end;
+            padding-top: 0.15rem;
+        }}
+        .st-key-ui_locale [data-baseweb="button-group"] {{
+            background: var(--agent-surface);
+            border: 1px solid var(--agent-border);
+            border-radius: 8px;
+        }}
+        .st-key-ui_locale button {{
+            color: var(--agent-muted);
+        }}
+        .st-key-ui_locale button[aria-pressed="true"] {{
+            background: var(--agent-surface-raised);
+            color: var(--agent-accent);
+        }}
+
+        .st-key-document_heading h3,
+        .st-key-conversation_heading h3 {{
+            text-align: center;
+        }}
+
+        .st-key-pdf_uploader [data-testid="stFileUploaderDropzone"] {{
+            position: relative;
+            min-height: 7rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 0.45rem;
+            cursor: pointer;
+        }}
+        .st-key-pdf_uploader [data-testid="stFileUploaderDropzone"] > * {{
+            visibility: hidden;
+            position: absolute;
+        }}
+        .st-key-pdf_uploader [data-testid="stFileUploaderDropzone"]::before {{
+            content: {dropzone_copy};
+            color: var(--agent-text);
+            font-weight: 600;
+            pointer-events: none;
+        }}
+        .st-key-pdf_uploader [data-testid="stFileUploaderDropzone"]::after {{
+            content: {dropzone_limit};
+            color: var(--agent-muted);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.78rem;
+            pointer-events: none;
+        }}
         </style>
         """,
         unsafe_allow_html=True,

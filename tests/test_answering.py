@@ -4,6 +4,7 @@ import pytest
 
 from pdf_document_agent.answering import (
     INSUFFICIENT_ANSWER,
+    INSUFFICIENT_ANSWER_EN,
     AnswerGenerationError,
     _LANGUAGE_SYSTEM_PROMPT,
     _REWRITE_SYSTEM_PROMPT,
@@ -497,6 +498,59 @@ def test_answer_russian_question_returns_russian_cited_answer() -> None:
     # grounding подтверждается принадлежностью цитаты retrieved-контексту.
     assert answer.source_pages == (42,)
     assert "Энтропия" in answer.text
+
+
+def test_selected_english_ui_forces_english_answer_and_citation_format() -> None:
+    chunks = _entropy_chunks()
+    prompts: list[tuple[str, str]] = []
+
+    def chat(system_prompt: str, user_prompt: str) -> str:
+        prompts.append((system_prompt, user_prompt))
+        if system_prompt == _REWRITE_SYSTEM_PROMPT:
+            return "software entropy"
+        return "Software entropy is growing disorder in a system [p. 42]."
+
+    answer = answer_question(
+        "Что такое энтропия программного обеспечения?",
+        chunks,
+        chat=chat,
+        answer_language="English",
+    )
+
+    assert answer.text.startswith("Software entropy")
+    assert answer.source_pages == (42,)
+    assert "Answer in English" in prompts[-1][1]
+
+
+def test_selected_english_ui_localizes_insufficient_answer() -> None:
+    chunks = make_chunks("A cat sleeps on a windowsill.")
+
+    answer = answer_question(
+        "Как устроен ядерный реактор?",
+        chunks,
+        chat=lambda _system, _user: "unrelated terms",
+        answer_language="English",
+    )
+
+    assert answer.text == INSUFFICIENT_ANSWER_EN
+    assert answer.source_pages == ()
+
+
+def test_selected_english_ui_normalizes_model_refusal() -> None:
+    chunks = _entropy_chunks()
+
+    answer = answer_question(
+        "What is software entropy?",
+        chunks,
+        chat=_rewriting_chat(
+            rewritten="software entropy",
+            answer="The document does not contain enough information to answer.",
+        ),
+        answer_language="English",
+    )
+
+    assert answer.text == INSUFFICIENT_ANSWER_EN
+    assert answer.sources == ()
 
 
 def test_answer_truly_irrelevant_question_stays_insufficient_after_rewrite() -> None:
