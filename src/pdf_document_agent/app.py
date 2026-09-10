@@ -6,6 +6,7 @@ from pathlib import Path
 
 import streamlit as st
 
+from pdf_document_agent import cache
 from pdf_document_agent.answering import AnswerGenerationError, answer_question
 from pdf_document_agent.extractor import (
     ExtractedDocument,
@@ -28,7 +29,6 @@ MAX_FILE_BYTES = 50 * 1024 * 1024
 HISTORY_LIMIT_OPTIONS = (5, 10, 25, 50)
 
 
-@st.cache_data(show_spinner=False)
 def prepare_pdf(
     file_bytes: bytes,
     file_name: str,
@@ -43,6 +43,10 @@ def prepare_pdf(
     if Path(safe_name).suffix.lower() != ".pdf":
         raise ValueError("Требуется файл формата PDF.")
 
+    cached = cache.get(file_bytes)
+    if cached is not None:
+        return cached
+
     with tempfile.TemporaryDirectory(prefix="pdf-agent-") as directory:
         temporary_pdf = Path(directory) / safe_name
         temporary_pdf.write_bytes(file_bytes)
@@ -51,6 +55,7 @@ def prepare_pdf(
     chunks = chunk_document(document)
     if not chunks:
         raise PdfExtractionError("В PDF нет текста, пригодного для поиска.")
+    cache.put(file_bytes, document, chunks)
     return document, chunks
 
 
@@ -132,6 +137,10 @@ def run_app() -> None:
         )
         st.caption(text(locale, "local_processing"))
         st.caption(text(locale, "session_history"))
+        st.caption(text(locale, "cache_description"))
+        if st.button(text(locale, "cache_clear"), key="clear_cache_button"):
+            cache.clear()
+            st.success(text(locale, "cache_cleared"))
 
     uploaded_file = st.file_uploader(
         text(locale, "uploader"),
@@ -597,4 +606,5 @@ def _apply_styles(locale: Locale) -> None:
     )
 
 
-run_app()
+if __name__ == "__main__":
+    run_app()
