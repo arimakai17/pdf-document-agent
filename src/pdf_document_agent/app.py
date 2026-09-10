@@ -145,13 +145,23 @@ def run_app() -> None:
             cache.clear()
             st.success(text(locale, "cache_cleared"))
 
-    uploaded_file = st.file_uploader(
+    if st.session_state.pop("uploader_collapse_pending", False):
+        st.session_state["uploader_expander"] = False
+
+    with st.expander(
         text(locale, "uploader"),
-        type="pdf",
-        accept_multiple_files=False,
-        help=text(locale, "uploader_help"),
-        key="pdf_uploader",
-    )
+        expanded=st.session_state.get("uploader_expander", True),
+        key="uploader_expander",
+        on_change="rerun",
+    ):
+        uploaded_file = st.file_uploader(
+            text(locale, "uploader"),
+            type="pdf",
+            accept_multiple_files=False,
+            help=text(locale, "uploader_help"),
+            key="pdf_uploader",
+            label_visibility="collapsed",
+        )
 
     document_panel, conversation_panel = st.columns(2)
     with document_panel:
@@ -184,6 +194,8 @@ def run_app() -> None:
             active_boxes=(),
             selected_history_index=None,
         )
+        st.session_state["uploader_collapse_pending"] = True
+        st.rerun()
 
     document = st.session_state.document
     chunks = st.session_state.chunks
