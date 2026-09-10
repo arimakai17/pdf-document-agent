@@ -358,7 +358,10 @@ def run_app() -> None:
             st.caption(text(locale, "history_scope"))
             selected_index = st.session_state.get("selected_history_index")
             if selected_index is not None:
-                st.button(
+                history_item, _ = st.columns(
+                    [9, 1], gap="small", vertical_alignment="center"
+                )
+                history_item.button(
                     text(locale, "return_current"),
                     key="history_current",
                     on_click=_show_current_dialog,

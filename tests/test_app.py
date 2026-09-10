@@ -1,5 +1,6 @@
 from pathlib import Path
 from xml.etree import ElementTree
+import ast
 
 from streamlit.testing.v1 import AppTest
 
@@ -20,6 +21,32 @@ APP_PATH = (
     / "pdf_document_agent"
     / "app.py"
 )
+
+
+def test_history_current_uses_same_two_column_grid_as_history_rows() -> None:
+    tree = ast.parse(APP_PATH.read_text(encoding="utf-8"))
+    current = next(
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and any(
+            isinstance(keyword.value, ast.Constant)
+            and keyword.value.value == "history_current"
+            for keyword in node.keywords
+        )
+    )
+    assert isinstance(current.func.value, ast.Name)
+    assert current.func.value.id == "history_item"
+    grid = next(
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "columns"
+        and isinstance(node.args[0], ast.List)
+        and [elt.value for elt in node.args[0].elts] == [9, 1]
+    )
+    keywords = {keyword.arg: ast.literal_eval(keyword.value) for keyword in grid.keywords}
+    assert keywords == {"gap": "small", "vertical_alignment": "center"}
 
 
 def test_app_starts_in_russian_with_pdf_atlas_branding() -> None:
