@@ -691,3 +691,84 @@ def test_answer_includes_following_chunks_for_section_continuation() -> None:
 
     assert answer.source_pages == (43,)
     assert answer.sources[0].excerpt.startswith("Fix each broken window")
+
+
+def test_adjacent_context_preserves_query_specific_highlight_boxes() -> None:
+    anchor_box = (0.1, 0.1, 0.9, 0.2)
+    chapter_5_box = (0.1, 0.3, 0.9, 0.4)
+    chapter_6_box = (0.1, 0.5, 0.9, 0.6)
+    chapter_7_box = (0.1, 0.7, 0.9, 0.8)
+    chunks = [
+        TextChunk(
+            index=0,
+            page_number=7,
+            text="Concurrency concurrency concurrency overview.",
+            boxes=(anchor_box,),
+            regions=(
+                TextRegion(
+                    page_number=7,
+                    text="Concurrency concurrency concurrency overview.",
+                    box=anchor_box,
+                ),
+            ),
+        ),
+        TextChunk(
+            index=1,
+            page_number=8,
+            text="Chapter 5 flexibility. Chapter 6 concurrency. Chapter 7 coding.",
+            boxes=(chapter_5_box, chapter_6_box, chapter_7_box),
+            regions=(
+                TextRegion(page_number=8, text="Chapter 5 flexibility.", box=chapter_5_box),
+                TextRegion(page_number=8, text="Chapter 6 concurrency.", box=chapter_6_box),
+                TextRegion(page_number=8, text="Chapter 7 coding.", box=chapter_7_box),
+            ),
+        ),
+        TextChunk(
+            index=2,
+            page_number=9,
+            text="Completely unrelated appendix text.",
+        ),
+    ]
+
+    answer = answer_question(
+        "О чём говорится в главе 6?",
+        chunks,
+        chat=_rewriting_chat(
+            rewritten="concurrency overview",
+            answer="Глава 6 посвящена конкуренции [стр. 8].",
+        ),
+        previous_questions=("Предыдущий вопрос",),
+    )
+
+    assert answer.sources[0].boxes == (chapter_6_box,)
+
+
+def test_unmatched_adjacent_context_has_no_false_highlight() -> None:
+    anchor_box = (0.1, 0.1, 0.9, 0.2)
+    unrelated_box = (0.1, 0.5, 0.9, 0.6)
+    chunks = [
+        TextChunk(
+            index=0,
+            page_number=42,
+            text="Software entropy is increasing disorder.",
+            boxes=(anchor_box,),
+        ),
+        TextChunk(
+            index=1,
+            page_number=43,
+            text="Fix each broken window immediately.",
+            boxes=(unrelated_box,),
+        ),
+    ]
+
+    answer = answer_question(
+        "Как с ней бороться?",
+        chunks,
+        chat=_rewriting_chat(
+            rewritten="software entropy",
+            answer="Исправляйте разбитые окна сразу [стр. 43].",
+        ),
+        previous_questions=("Что такое энтропия?",),
+    )
+
+    assert answer.sources[0].boxes == ()

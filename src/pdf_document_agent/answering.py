@@ -328,6 +328,7 @@ def _add_adjacent_context(
         return results[:limit]
 
     position_by_index = {chunk.index: position for position, chunk in enumerate(chunks)}
+    retrieved_by_index = {result.chunk.index: result for result in results}
     anchor_position = position_by_index.get(results[0].chunk.index)
     if anchor_position is None:
         return results[:limit]
@@ -343,10 +344,9 @@ def _add_adjacent_context(
             continue
         seen.add(chunk.index)
         expanded.append(
-            SearchResult(
-                chunk=chunk,
-                score=0.0,
-                highlight_boxes=chunk.boxes,
+            retrieved_by_index.get(
+                chunk.index,
+                SearchResult(chunk=chunk, score=0.0),
             )
         )
         if len(expanded) >= limit:
