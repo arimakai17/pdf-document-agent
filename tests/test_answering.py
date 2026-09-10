@@ -8,7 +8,7 @@ from pdf_document_agent.answering import (
     answer_question,
 )
 from pdf_document_agent.extractor import ExtractedDocument, ExtractedPage, TextRegion
-from pdf_document_agent.retrieval import chunk_document, search_chunks
+from pdf_document_agent.retrieval import TextChunk, chunk_document, search_chunks
 
 
 def make_chunks(*pages: str):
@@ -318,6 +318,34 @@ def test_answer_source_boxes_are_query_specific() -> None:
     answer = answer_question("Garbage In Garbage Out", chunks, chat=fake_chat)
 
     assert answer.sources[0].boxes == (target_box,)
+
+
+def test_answer_selects_chunk_that_best_supports_answer_on_cited_page() -> None:
+    weak_box = (0.1, 0.1, 0.8, 0.2)
+    supporting_box = (0.1, 0.5, 0.8, 0.6)
+    chunks = [
+        TextChunk(
+            index=0,
+            page_number=1,
+            text="Python создал Python создал Python создал.",
+            boxes=(weak_box,),
+        ),
+        TextChunk(
+            index=1,
+            page_number=1,
+            text="Python создал Гвидо ван Россум в конце 1980-х годов.",
+            boxes=(supporting_box,),
+        ),
+    ]
+
+    answer = answer_question(
+        "Кто создал Python?",
+        chunks,
+        chat=lambda _system, _user: "Python создал Гвидо ван Россум [стр. 1].",
+    )
+
+    assert answer.sources[0].excerpt == chunks[1].text
+    assert answer.sources[0].boxes == (supporting_box,)
 
 
 def test_refusal_has_no_sources() -> None:

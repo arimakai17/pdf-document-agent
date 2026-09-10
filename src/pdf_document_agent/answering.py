@@ -95,22 +95,26 @@ def answer_question(
             "Ответ имеет недостаточную лексическую опору в процитированном фрагменте."
         )
 
-    sources = _build_sources(cited_pages, results)
+    sources = _build_sources(text, cited_pages, results)
     return GroundedAnswer(text=text, source_pages=cited_pages, sources=sources)
 
 
 def _build_sources(
+    answer_text: str,
     cited_pages: tuple[int, ...],
     results: list[SearchResult],
 ) -> tuple[CitedSource, ...]:
-    """Для каждой cited page выбрать лучший (по score) retrieved chunk на этой странице."""
+    """Выбрать на каждой cited page фрагмент, лучше всего поддерживающий ответ."""
+    answer_tokens = set(_tokenize(_CITATION_PATTERN.sub("", answer_text)))
     best_by_page: dict[int, SearchResult] = {}
     for result in results:
         page = result.chunk.page_number
         if page not in cited_pages:
             continue
         current = best_by_page.get(page)
-        if current is None or result.score > current.score:
+        if current is None or _source_selection_key(
+            result, answer_tokens
+        ) > _source_selection_key(current, answer_tokens):
             best_by_page[page] = result
 
     return tuple(
@@ -122,6 +126,15 @@ def _build_sources(
         for page in cited_pages
         if page in best_by_page
     )
+
+
+def _source_selection_key(
+    result: SearchResult,
+    answer_tokens: set[str],
+) -> tuple[int, float]:
+    """Сначала ранжировать источник по словам ответа, затем по retrieval score."""
+    chunk_tokens = set(_tokenize(result.chunk.text))
+    return (len(answer_tokens & chunk_tokens), result.score)
 
 
 def _claim_supported(text: str, cited_chunks: list[TextChunk]) -> bool:
