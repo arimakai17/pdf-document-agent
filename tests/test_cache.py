@@ -171,6 +171,19 @@ def test_get_ignores_structurally_invalid_entry(cache_dir: Path) -> None:
 # --- prepare_pdf integration tests -----------------------------------------
 
 
+def test_prepare_pdf_returns_extraction_when_cache_write_fails(
+    cache_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls, doc, chunks = _install_fake_extraction(monkeypatch)
+    monkeypatch.setattr(cache, "put", lambda *args: (_ for _ in ()).throw(OSError("disk full")))
+
+    result = app.prepare_pdf(b"%PDF-1.4 cache failure", "alpha.pdf")
+
+    assert calls["extract"] == 1
+    assert calls["chunk"] == 1
+    assert result == (doc, chunks)
+
+
 def test_prepare_pdf_miss_then_hit_without_extractor(
     cache_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

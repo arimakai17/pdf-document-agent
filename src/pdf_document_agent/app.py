@@ -55,7 +55,10 @@ def prepare_pdf(
     chunks = chunk_document(document)
     if not chunks:
         raise PdfExtractionError("В PDF нет текста, пригодного для поиска.")
-    cache.put(file_bytes, document, chunks)
+    try:
+        cache.put(file_bytes, document, chunks)
+    except OSError:
+        pass
     return document, chunks
 
 
