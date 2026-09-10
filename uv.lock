@@ -1323,6 +1323,8 @@ source = { editable = "." }
 dependencies = [
     { name = "docling" },
     { name = "ocrmac" },
+    { name = "pillow" },
+    { name = "pypdfium2" },
     { name = "streamlit" },
 ]
 
@@ -1335,6 +1337,8 @@ dev = [
 requires-dist = [
     { name = "docling", specifier = ">=2.126.0" },
     { name = "ocrmac", specifier = ">=1.0,<2" },
+    { name = "pillow", specifier = ">=12.3.0" },
+    { name = "pypdfium2", specifier = ">=5.13.0" },
     { name = "streamlit", specifier = ">=1.49,<2" },
 ]
 
