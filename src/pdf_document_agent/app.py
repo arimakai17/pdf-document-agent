@@ -319,12 +319,176 @@ def _apply_styles() -> None:
         """
         <style>
         :root {
+            color-scheme: dark;
             --agent-bg: #0A0A0B;
+            --agent-surface: #111214;
+            --agent-surface-raised: #17181B;
+            --agent-border: #2A2B2F;
+            --agent-border-strong: #42444B;
+            --agent-text: #F3F4F6;
+            --agent-muted: #A8ABB3;
             --agent-accent: #FF4D00;
+            --agent-accent-hover: #E64500;
         }
-        .stApp { background: var(--agent-bg); }
-        .stButton > button, .stFormSubmitButton > button {
+
+        html, body, [data-testid="stAppViewContainer"], .stApp {
+            background: var(--agent-bg);
+            color: var(--agent-text);
+        }
+        [data-testid="stHeader"] {
+            background: var(--agent-bg);
+        }
+        [data-testid="stSidebar"] {
+            background: var(--agent-surface);
+            border-right: 1px solid var(--agent-border);
+        }
+        [data-testid="stSidebar"] > div:first-child {
+            background: var(--agent-surface);
+        }
+
+        h1, h2, h3, h4, p, label,
+        [data-testid="stMarkdownContainer"] {
+            color: var(--agent-text);
+        }
+        [data-testid="stCaptionContainer"],
+        [data-testid="stCaptionContainer"] p,
+        small {
+            color: var(--agent-muted) !important;
+        }
+        [data-testid="stCaptionContainer"] {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            letter-spacing: 0.02em;
+        }
+
+        [data-testid="stExpander"],
+        [data-testid="stForm"],
+        [data-testid="stChatMessage"] {
+            background: var(--agent-surface);
+            border: 1px solid var(--agent-border);
+            border-radius: 10px;
+        }
+        [data-testid="stExpander"] summary:hover {
+            color: var(--agent-accent);
+        }
+        [data-testid="stExpander"] summary svg {
+            fill: var(--agent-muted);
+        }
+        [data-testid="stChatMessage"] {
+            padding: 0.85rem 1rem;
+        }
+
+        .stTextInput input,
+        .stTextArea textarea,
+        [data-baseweb="select"] > div {
+            background: var(--agent-surface-raised) !important;
+            border-color: var(--agent-border) !important;
+            color: var(--agent-text) !important;
+        }
+        .stTextInput input::placeholder,
+        .stTextArea textarea::placeholder {
+            color: var(--agent-muted) !important;
+        }
+        .stTextInput input:focus,
+        .stTextArea textarea:focus,
+        [data-baseweb="select"] > div:focus-within {
+            border-color: var(--agent-accent) !important;
+            box-shadow: 0 0 0 1px var(--agent-accent) !important;
+        }
+        [data-baseweb="popover"],
+        [role="listbox"] {
+            background: var(--agent-surface-raised) !important;
+            color: var(--agent-text) !important;
+        }
+
+        [data-testid="stFileUploaderDropzone"] {
+            background: var(--agent-surface);
+            border: 1px dashed var(--agent-border-strong);
+            border-radius: 10px;
+        }
+        [data-testid="stFileUploaderDropzone"]:hover {
             border-color: var(--agent-accent);
+        }
+
+        .stButton > button,
+        .stFormSubmitButton > button,
+        [data-testid="stFileUploaderDropzone"] button {
+            background: var(--agent-surface-raised);
+            border: 1px solid var(--agent-border-strong);
+            color: var(--agent-text);
+            border-radius: 8px;
+            transition: background-color 120ms ease, border-color 120ms ease,
+                        color 120ms ease;
+        }
+        .stButton > button:hover,
+        [data-testid="stFileUploaderDropzone"] button:hover {
+            background: #1E2024;
+            border-color: var(--agent-accent);
+            color: var(--agent-accent);
+        }
+        .stFormSubmitButton > button {
+            background: var(--agent-accent);
+            border-color: var(--agent-accent);
+            color: #FFFFFF;
+            font-weight: 650;
+        }
+        .stFormSubmitButton > button:hover {
+            background: var(--agent-accent-hover);
+            border-color: var(--agent-accent-hover);
+            color: #FFFFFF;
+        }
+        .stButton > button:focus,
+        .stFormSubmitButton > button:focus,
+        [data-testid="stFileUploaderDropzone"] button:focus {
+            box-shadow: 0 0 0 2px var(--agent-bg),
+                        0 0 0 4px var(--agent-accent) !important;
+        }
+        button:disabled {
+            background: var(--agent-surface) !important;
+            border-color: var(--agent-border) !important;
+            color: #61646B !important;
+        }
+
+        [data-testid="stAlert"] {
+            background: var(--agent-surface);
+            border: 1px solid var(--agent-border);
+            border-left: 3px solid var(--agent-accent);
+            color: var(--agent-text);
+        }
+        [data-testid="stAlertContainer"] {
+            background: transparent !important;
+            color: var(--agent-accent) !important;
+        }
+        [data-testid^="stAlertContent"] {
+            color: var(--agent-accent) !important;
+        }
+        [data-testid="stImage"] img {
+            border: 1px solid var(--agent-border);
+            border-radius: 8px;
+        }
+        hr {
+            border-color: var(--agent-border);
+        }
+        a {
+            color: var(--agent-accent) !important;
+        }
+        ::selection {
+            background: var(--agent-accent);
+            color: #FFFFFF;
+        }
+        ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--agent-bg);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--agent-border-strong);
+            border: 2px solid var(--agent-bg);
+            border-radius: 999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--agent-accent);
         }
         </style>
         """,
