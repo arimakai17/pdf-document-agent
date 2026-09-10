@@ -5,6 +5,7 @@ import pytest
 from pdf_document_agent.answering import (
     INSUFFICIENT_ANSWER,
     AnswerGenerationError,
+    _LANGUAGE_SYSTEM_PROMPT,
     _REWRITE_SYSTEM_PROMPT,
     _rewrite_search_query,
     answer_question,
@@ -503,6 +504,8 @@ def test_answer_truly_irrelevant_question_stays_insufficient_after_rewrite() -> 
     answer_calls: list[str] = []
 
     def chat(system_prompt: str, user_prompt: str) -> str:
+        if system_prompt == _LANGUAGE_SYSTEM_PROMPT:
+            return "English"
         if system_prompt == _REWRITE_SYSTEM_PROMPT:
             # Переписанный запрос не имеет пересечения со словарём документа.
             return "химический состав атмосферы Юпитера"
@@ -533,3 +536,29 @@ def test_answer_accepts_cross_language_paraphrase_with_valid_citation() -> None:
     )
 
     assert answer.source_pages == (42,)
+
+
+def test_answer_recovers_when_qwen_keeps_question_language_on_first_rewrite() -> None:
+    chunks = _entropy_chunks()
+    rewrite_prompts: list[str] = []
+
+    def chat(system_prompt: str, user_prompt: str) -> str:
+        if system_prompt == _LANGUAGE_SYSTEM_PROMPT:
+            return "English"
+        if system_prompt == _REWRITE_SYSTEM_PROMPT:
+            rewrite_prompts.append(user_prompt)
+            if len(rewrite_prompts) == 1:
+                # Фактический вывод qwen3:14b на полном Docling extraction.
+                return "программное обеспечение энтропия"
+            return "software entropy"
+        return "Энтропия — это нарастающий беспорядок в системе [стр. 42]."
+
+    answer = answer_question(
+        "что такое энтропия прграммоного обеспечения?",
+        chunks,
+        chat=chat,
+    )
+
+    assert answer.source_pages == (42,)
+    assert len(rewrite_prompts) == 2
+    assert "Target document language: English" in rewrite_prompts[1]
