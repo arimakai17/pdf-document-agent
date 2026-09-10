@@ -5,6 +5,8 @@ import pytest
 from pdf_document_agent.answering import (
     INSUFFICIENT_ANSWER,
     AnswerGenerationError,
+    _REWRITE_SYSTEM_PROMPT,
+    _rewrite_search_query,
     answer_question,
 )
 from pdf_document_agent.extractor import ExtractedDocument, ExtractedPage, TextRegion
@@ -62,7 +64,7 @@ def test_answer_question_does_not_call_model_without_relevant_context() -> None:
 
     assert answer.text == INSUFFICIENT_ANSWER
     assert answer.source_pages == ()
-    assert called is False
+    assert called is True
 
 
 def test_answer_question_rejects_page_not_present_in_context() -> None:
@@ -96,7 +98,7 @@ def test_answer_question_rejects_empty_model_output(model_output: str) -> None:
         answer_question("Кто создал Python?", chunks, chat=chat)
 
 
-def test_answer_question_skips_model_for_single_shared_term_chunk() -> None:
+def test_answer_question_allows_cited_answer_for_single_shared_term_chunk() -> None:
     chunks = make_chunks("Python — это простое слово из шести букв.")
     called = False
 
@@ -109,37 +111,24 @@ def test_answer_question_skips_model_for_single_shared_term_chunk() -> None:
 
     assert answer.text == INSUFFICIENT_ANSWER
     assert answer.source_pages == ()
-    assert called is False
+    assert called is True
 
 
-def test_answer_question_rejects_claim_without_lexical_support() -> None:
+def test_answer_question_accepts_cross_language_claim_with_context_citation() -> None:
     chunks = make_chunks(
         "Париж является столицей Франции.",
         "Python встречается в названиях многих книг.",
     )
 
-    with pytest.raises(AnswerGenerationError, match="лексическ"):
-        answer_question(
-            "Кто создал Python?",
-            chunks,
-            chat=lambda _system, _user: (
-                "Гвидо ван Россум создал Python в 1960 году [стр. 2]."
-            ),
-        )
+    answer = answer_question("Кто создал Python?", chunks, chat=lambda _system, _user: "Гвидо ван Россум создал Python в 1960 году [стр. 2].")
+    assert answer.source_pages == (2,)
 
 
-def test_answer_question_rejects_long_answer_with_few_shared_words() -> None:
+def test_answer_question_accepts_paraphrase_with_citation_membership() -> None:
     chunks = make_chunks("Гвидо ван Россум написал первую реализацию языка Python.")
 
-    with pytest.raises(AnswerGenerationError, match="лексическ"):
-        answer_question(
-            "Кто создал Python?",
-            chunks,
-            chat=lambda _system, _user: (
-                "Гвидо ван Россум руководил лабораторией в Амстердаме "
-                "и занимался операционными системами [стр. 1]."
-            ),
-        )
+    answer = answer_question("Кто создал Python?", chunks, chat=lambda _system, _user: "Гвидо ван Россум руководил лабораторией в Амстердаме и занимался операционными системами [стр. 1].")
+    assert answer.source_pages == (1,)
 
 
 def test_answer_question_validates_against_cited_page_only() -> None:
@@ -148,13 +137,23 @@ def test_answer_question_validates_against_cited_page_only() -> None:
         "Python — это также слово в названиях книг о змеях.",
     )
 
-    with pytest.raises(AnswerGenerationError, match="лексическ"):
+    with pytest.raises(AnswerGenerationError, match="несуществующую страницу"):
         answer_question(
             "Кто создал Python?",
             chunks,
             chat=lambda _system, _user: "Python создал Гвидо ван Россум [стр. 2].",
             top_k=2,
         )
+
+
+def test_answer_question_propagates_rewriter_model_error() -> None:
+    chunks = make_chunks("Python создал Гвидо ван Россум.")
+
+    def failing_chat(_system: str, _user: str) -> str:
+        raise OSError("ollama unavailable")
+
+    with pytest.raises(AnswerGenerationError, match="переписать"):
+        answer_question("Кто создал Python?", chunks, chat=failing_chat)
 
 
 def test_answer_question_normalizes_refusal_variant() -> None:
@@ -360,3 +359,146 @@ def test_refusal_has_no_sources() -> None:
     assert answer.text == INSUFFICIENT_ANSWER
     assert answer.source_pages == ()
     assert answer.sources == ()
+
+
+def _entropy_chunks() -> list[TextChunk]:
+    return [
+        TextChunk(
+            index=0,
+            page_number=42,
+            text=(
+                "Software entropy is the gradual decay and disorder that "
+                "creeps into a system over time."
+            ),
+        )
+    ]
+
+
+def _rewriting_chat(rewritten: str, answer: str):
+    """Чат, который различает rewrite-запрос и запрос ответа по system prompt."""
+
+    def chat(system_prompt: str, user_prompt: str) -> str:
+        if system_prompt == _REWRITE_SYSTEM_PROMPT:
+            return rewritten
+        return answer
+
+    return chat
+
+
+def test_rewrite_returns_terms_in_document_language() -> None:
+    chunks = _entropy_chunks()
+
+    query = _rewrite_search_query(
+        "Как автор определяет энтропию программного обеспечения?",
+        chunks,
+        lambda _system, _user: "software entropy",
+    )
+
+    assert query == "software entropy"
+
+
+def test_rewrite_filters_mixed_language_output_to_vocabulary() -> None:
+    chunks = _entropy_chunks()
+
+    query = _rewrite_search_query(
+        "Как автор определяет энтропию программного обеспечения?",
+        chunks,
+        lambda _system, _user: (
+            "энтропия программного обеспечения, software entropy"
+        ),
+    )
+
+    # Русские термины не встречаются в английском документе и отбрасываются;
+    # остаются только термины, буквально присутствующие в словаре документа.
+    assert query == "software entropy"
+
+
+def test_rewrite_returns_none_on_empty_model_output() -> None:
+    chunks = _entropy_chunks()
+
+    assert (
+        _rewrite_search_query(
+            "Как автор определяет энтропию?",
+            chunks,
+            lambda _system, _user: "",
+        )
+        is None
+    )
+
+
+def test_answer_english_question_finds_english_entropy_chunk() -> None:
+    chunks = _entropy_chunks()
+
+    answer = answer_question(
+        "How does the author define software entropy?",
+        chunks,
+        chat=_rewriting_chat(
+            rewritten="software entropy",
+            answer=(
+                "Software entropy is the gradual decay and disorder that "
+                "creeps into a system over time [стр. 42]."
+            ),
+        ),
+    )
+
+    assert answer.source_pages == (42,)
+    assert answer.sources[0].page_number == 42
+    assert answer.text.startswith("Software entropy")
+
+
+def test_answer_russian_question_returns_russian_cited_answer() -> None:
+    chunks = _entropy_chunks()
+
+    answer = answer_question(
+        "Как автор определяет энтропию программного обеспечения?",
+        chunks,
+        chat=_rewriting_chat(
+            rewritten="software entropy",
+            answer=(
+                "Энтропия программного обеспечения — это постепенный распад "
+                "и беспорядок в системе [стр. 42]."
+            ),
+        ),
+    )
+
+    # Ответ на русском принят без буквального перекрытия с английским чанком:
+    # grounding подтверждается принадлежностью цитаты retrieved-контексту.
+    assert answer.source_pages == (42,)
+    assert "Энтропия" in answer.text
+
+
+def test_answer_truly_irrelevant_question_stays_insufficient_after_rewrite() -> None:
+    chunks = _entropy_chunks()
+    answer_calls: list[str] = []
+
+    def chat(system_prompt: str, user_prompt: str) -> str:
+        if system_prompt == _REWRITE_SYSTEM_PROMPT:
+            # Переписанный запрос не имеет пересечения со словарём документа.
+            return "химический состав атмосферы Юпитера"
+        answer_calls.append(system_prompt)
+        return "не должен быть вызван"
+
+    answer = answer_question(
+        "Каков химический состав атмосферы Юпитера?",
+        chunks,
+        chat=chat,
+    )
+
+    assert answer.text == INSUFFICIENT_ANSWER
+    assert answer.source_pages == ()
+    assert answer_calls == []
+
+
+def test_answer_accepts_cross_language_paraphrase_with_valid_citation() -> None:
+    chunks = _entropy_chunks()
+
+    answer = answer_question(
+        "Что автор говорит о нарастающем беспорядке в коде?",
+        chunks,
+        chat=_rewriting_chat(
+            rewritten="software entropy",
+            answer="Беспорядок накапливается со временем [стр. 42].",
+        ),
+    )
+
+    assert answer.source_pages == (42,)

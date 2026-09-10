@@ -11,8 +11,8 @@
 - включает OCR для сканов через macOS Vision (`ocrmac`, языки `ru-RU` и `en-US`);
 - сохраняет текст по страницам и разбивает его на перекрывающиеся фрагменты;
 - ищет контекст BM25-подобным лексическим ранжированием с coverage gate;
-- отправляет только найденный контекст в локальный Ollama для grounded Q&A;
-- проверяет наличие ссылок вида `[стр. N]`, принадлежность страниц контексту и лексическую опору ответа;
+- делает bounded LLM query rewrite перед лексическим retrieval и отправляет вопрос и найденный контекст в локальный Ollama;
+- проверяет наличие ссылок вида `[стр. N]` и принадлежность страниц retrieved-контексту;
 - нормализует чистый отказ модели к каноническому тексту: `В документе недостаточно информации для ответа.`;
 - предоставляет старый режим вывода извлечённого Markdown, одноразовый вопрос и интерактивный CLI;
 - предоставляет Streamlit UI с загрузкой PDF, выбором модели и диалогом.
@@ -41,7 +41,7 @@ chunking (до 1 800 символов, overlap 250)
 канонический отказ                 локальный Ollama (qwen3:14b)
                                                  │
                                                  ▼
-                         citation check + lexical support check
+                         citation membership check
                                                  │
                           ┌──────────────────────┴─────────────────────┐
                           ▼                                            ▼
@@ -128,7 +128,7 @@ src/pdf_document_agent/
 ├── app.py            # Streamlit UI и загрузка PDF
 ├── extractor.py      # Docling, страницы и macOS Vision OCR
 ├── retrieval.py      # chunking, токенизация и BM25-подобный поиск
-├── answering.py      # prompt, citations, lexical support и отказ
+├── answering.py      # rewrite, prompt, citations и отказ
 └── ollama.py         # локальный Ollama API и модель по умолчанию
 
 tests/
@@ -142,8 +142,8 @@ tests/
 ## Ограничения учебного MVP
 
 - Retrieval работает по точным лексическим токенам: нет морфологии, лемматизации и embeddings.
-- Coverage gate и lexical support gate проверяют совпадение слов, но не доказывают семантическую истинность ответа.
-- Citation check проверяет формат и страницы контекста, а не достоверность утверждения.
+- Coverage gate проверяет лексическое совпадение для retrieval, но не доказывает семантическую истинность ответа.
+- Citation membership проверяет формат и принадлежность страниц retrieved-контексту, а не factual groundedness утверждения; cross-language paraphrase допустим.
 - Prompt delimiters и инструкции о недоверенном контексте снижают, но не устраняют prompt injection.
 - OCR backend использует macOS Vision и не является переносимым на Linux/Windows без замены backend.
 - Retrieval хранит данные в памяти и имеет O(N)-проход по фрагментам при поиске.

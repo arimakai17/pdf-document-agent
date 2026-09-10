@@ -247,6 +247,21 @@ def _boxes_for_regions(
     return tuple(boxes)
 
 
+def document_vocabulary(
+    chunks: list[TextChunk],
+) -> frozenset[str]:
+    """Множество нормализованных токенов, буквально встречающихся в документе.
+
+    Используется как фильтр для переписанного поискового запроса: из вывода
+    модели оставляются только термины, реально присутствующие в тексте документа,
+    что отсекает термины на чужом языке и ограничивает раздувание поиска.
+    """
+    vocabulary: set[str] = set()
+    for chunk in chunks:
+        vocabulary.update(_tokenize(chunk.text))
+    return frozenset(vocabulary)
+
+
 def _tokenize(text: str) -> list[str]:
     return [
         token

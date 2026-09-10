@@ -5,6 +5,7 @@ from pdf_document_agent.retrieval import (
     SearchResult,
     TextChunk,
     chunk_document,
+    document_vocabulary,
     search_chunks,
 )
 
@@ -220,3 +221,25 @@ def test_search_result_default_constructor_has_empty_highlight_boxes() -> None:
     chunk = TextChunk(index=0, page_number=1, text="текст")
 
     assert SearchResult(chunk=chunk, score=1.0).highlight_boxes == ()
+
+
+def test_document_vocabulary_contains_only_document_terms() -> None:
+    chunks = chunk_document(
+        make_document("Software entropy is a measure of disorder in a system.")
+    )
+
+    vocabulary = document_vocabulary(chunks)
+
+    assert "software" in vocabulary
+    assert "entropy" in vocabulary
+    assert "measure" in vocabulary
+    # Чуждые языку документа термины не должны появляться в словаре.
+    assert "энтропия" not in vocabulary
+    assert "программного" not in vocabulary
+
+
+def test_document_vocabulary_includes_terms_after_first_100k_characters() -> None:
+    chunks = chunk_document(
+        make_document("обычный текст " * 8_000, "latechapterterm появляется здесь.")
+    )
+    assert "latechapterterm" in document_vocabulary(chunks)
