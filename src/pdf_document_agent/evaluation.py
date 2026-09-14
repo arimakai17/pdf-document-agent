@@ -152,6 +152,7 @@ class CaseSpec:
     split: Split
     categories: tuple[str, ...]
     document_id: str
+    ocr_pages: tuple[int, ...]
     extraction: tuple[ExpectedPage, ...]
     questions: tuple[QuestionSpec, ...]
 
@@ -166,6 +167,9 @@ class CaseSpec:
         if len(set(self.categories)) != len(self.categories):
             raise ValueError("case categories must not contain duplicates")
         _require_nonempty_string(self.document_id, "case document id")
+        _validate_pages(self.ocr_pages, "case OCR pages")
+        if tuple(sorted(self.ocr_pages)) != self.ocr_pages:
+            raise ValueError("case OCR pages must be sorted")
         if not self.extraction:
             raise ValueError("case extraction must not be empty")
         if len({page.page_number for page in self.extraction}) != len(self.extraction):
@@ -417,13 +421,30 @@ def load_manifest(path: str | Path) -> Manifest:
         item = _strict_object(
             raw,
             f"cases[{index}]",
-            {"id", "split", "categories", "document_id", "extraction", "questions"},
+            {
+                "id",
+                "split",
+                "categories",
+                "document_id",
+                "ocr_pages",
+                "extraction",
+                "questions",
+            },
         )
         categories = item["categories"]
+        ocr_pages = item["ocr_pages"]
         extraction_data = item["extraction"]
         questions_data = item["questions"]
-        if type(categories) is not list or type(extraction_data) is not list or type(questions_data) is not list:
-            raise ValueError(f"cases[{index}] categories, extraction, and questions must be arrays")
+        if (
+            type(categories) is not list
+            or type(ocr_pages) is not list
+            or type(extraction_data) is not list
+            or type(questions_data) is not list
+        ):
+            raise ValueError(
+                f"cases[{index}] categories, ocr_pages, extraction, and questions "
+                "must be arrays"
+            )
         extraction: list[ExpectedPage] = []
         for page_index, raw_page in enumerate(extraction_data):
             page = _strict_object(
@@ -466,6 +487,7 @@ def load_manifest(path: str | Path) -> Manifest:
                 split=item["split"],
                 categories=tuple(categories),
                 document_id=item["document_id"],
+                ocr_pages=tuple(ocr_pages),
                 extraction=tuple(extraction),
                 questions=tuple(questions),
             )

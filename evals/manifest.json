@@ -50,6 +50,7 @@
       "split": "tuning",
       "categories": ["text_page", "answerable_similar_words"],
       "document_id": "synthetic-text-tuning",
+      "ocr_pages": [],
       "extraction": [
         {"page": 1, "route": "docling_text", "status": "ok"},
         {"page": 2, "route": "docling_text", "status": "ok"}
@@ -74,9 +75,10 @@
       "split": "tuning",
       "categories": ["scan_page", "ocr_noise"],
       "document_id": "synthetic-mixed-tuning",
+      "ocr_pages": [],
       "extraction": [
         {"page": 1, "route": "docling_ocr", "status": "ok"},
-        {"page": 2, "route": "docling_ocr", "status": "failed"}
+        {"page": 2, "route": "docling_ocr", "status": "ok"}
       ],
       "questions": [
         {
@@ -102,6 +104,7 @@
         "blank_sparse_page"
       ],
       "document_id": "synthetic-mixed-tuning",
+      "ocr_pages": [3],
       "extraction": [
         {"page": 3, "route": "docling_ocr", "status": "ok"},
         {"page": 4, "route": "docling_ocr", "status": "ok"},
@@ -133,6 +136,7 @@
       "split": "acceptance",
       "categories": ["multi_page_answer", "ambiguous_lexical_matches"],
       "document_id": "real-acceptance-text-pending",
+      "ocr_pages": [],
       "extraction": [
         {"page": 1, "route": "docling_text", "status": "ok"},
         {"page": 2, "route": "docling_text", "status": "ok"},
@@ -158,6 +162,7 @@
       "split": "acceptance",
       "categories": ["unanswerable_similar_words"],
       "document_id": "real-acceptance-text-pending",
+      "ocr_pages": [],
       "extraction": [
         {"page": 1, "route": "docling_text", "status": "ok"}
       ],
@@ -175,6 +180,7 @@
       "split": "acceptance",
       "categories": ["same_page_text_raster", "alternating_mixed_pages"],
       "document_id": "real-acceptance-mixed-pending",
+      "ocr_pages": [],
       "extraction": [
         {"page": 1, "route": "docling_text", "status": "ok"},
         {"page": 2, "route": "docling_ocr", "status": "ok"}

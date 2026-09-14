@@ -64,6 +64,7 @@ def _manifest(*, cases: list[dict] | None = None) -> dict:
                     "unanswerable_similar_words",
                 ],
                 "document_id": "doc-1",
+                "ocr_pages": [],
                 "extraction": [
                     {"page": 1, "route": "docling_text", "status": "ok"},
                     {"page": 2, "route": "docling_ocr", "status": "ok"},
@@ -88,6 +89,7 @@ def _manifest(*, cases: list[dict] | None = None) -> dict:
                 "split": "acceptance",
                 "categories": ["text_page"],
                 "document_id": "doc-1",
+                "ocr_pages": [],
                 "extraction": [
                     {"page": 1, "route": "docling_text", "status": "ok"},
                 ],
@@ -343,6 +345,7 @@ def test_missing_observations_and_runtime_failure_are_not_pass_or_zero(tmp_path:
         lambda data: data["documents"].append(data["documents"][0]),
         lambda data: data.update({"schema_version": 99}),
         lambda data: data["cases"][0]["extraction"][0].update({"page": 0}),
+        lambda data: data["cases"][0].update({"ocr_pages": [2, 1]}),
         lambda data: data["cases"][0]["questions"][0].update(
             {"source_page_sets": [[]]}
         ),
@@ -391,6 +394,10 @@ def test_synthetic_corpus_is_deterministic_and_has_expected_page_layers(
         if document.kind == "synthetic"
     }
     assert manifest_hashes == hashes
+    mixed_case = next(
+        case for case in manifest.cases if case.case_id == "tuning-mixed-and-sparse"
+    )
+    assert mixed_case.ocr_pages == (3,)
 
     text_pdf = pdfium.PdfDocument(tmp_path / "synthetic-text-tuning.pdf")
     mixed_pdf = pdfium.PdfDocument(tmp_path / "synthetic-mixed-tuning.pdf")

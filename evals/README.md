@@ -23,8 +23,9 @@ same-page digital+raster, scan, blank); их SHA-256 зафиксированы 
 placeholder-записи с незаполненным hash; поэтому текущий gate не может быть
 `pass`.
 
-Каждый case задаёт категории, expected per-page `route` и `status`, а также
-полный текст вопросов. Допустимые routes: `docling_text`, `docling_ocr`; статусы:
+Каждый case задаёт категории, полный текст вопросов, expected per-page `route`
+и `status`, а также явный `ocr_pages` для manual overrides этого запуска.
+Допустимые routes: `docling_text`, `docling_ocr`; статусы:
 `ok`, `empty`, `failed`. Для answerable вопроса `source_page_sets` содержит
 один или несколько непустых допустимых наборов страниц. Evaluator выбирает
 набор с лучшим recall. Для unanswerable вопроса наборы обязаны быть пустыми.
