@@ -2,7 +2,7 @@ import http.client
 import json
 import socket
 from json import JSONDecodeError
-from threading import Event, Thread
+from threading import Event, Lock, Thread
 from time import monotonic
 from urllib.error import URLError
 from urllib.parse import urlsplit
@@ -24,11 +24,12 @@ class OllamaTimeoutError(OllamaError):
 
 
 class _ExchangeWatchdog:
-    def __init__(self, connection: http.client.HTTPConnection, deadline: float) -> None:
-        self._connection = connection
+    def __init__(self, deadline: float) -> None:
         self._deadline = deadline
         self._stop = Event()
         self._expired = Event()
+        self._socket = None
+        self._lock = Lock()
         self._thread = Thread(
             target=self._run,
             name="ollama-deadline-watchdog",
@@ -45,21 +46,31 @@ class _ExchangeWatchdog:
         self._stop.set()
         self._thread.join()
 
+    def register_socket(self, sock) -> None:
+        if sock is None:
+            return
+        with self._lock:
+            if self._expired.is_set():
+                abort = True
+            else:
+                self._socket = sock
+                abort = False
+        if abort:
+            self._shutdown_socket(sock)
+
     def _run(self) -> None:
         if self._stop.wait(max(0.0, self._deadline - monotonic())):
             return
-        self._expired.set()
-        self._abort_connection()
-
-    def _abort_connection(self) -> None:
-        sock = getattr(self._connection, "sock", None)
+        with self._lock:
+            self._expired.set()
+            sock = self._socket
         if sock is not None:
-            try:
-                sock.shutdown(socket.SHUT_RDWR)
-            except OSError:
-                pass
+            self._shutdown_socket(sock)
+
+    @staticmethod
+    def _shutdown_socket(sock) -> None:
         try:
-            self._connection.close()
+            sock.shutdown(socket.SHUT_RDWR)
         except OSError:
             pass
 
@@ -124,7 +135,7 @@ def chat_with_ollama(
             "Не удалось подключиться к Ollama. Запусти приложение Ollama."
         ) from error
 
-    watchdog = _ExchangeWatchdog(connection, deadline)
+    watchdog = _ExchangeWatchdog(deadline)
     response = None
     try:
         watchdog.start()
@@ -134,6 +145,7 @@ def chat_with_ollama(
             body=request_body,
             headers={"Content-Type": "application/json"},
         )
+        watchdog.register_socket(getattr(connection, "sock", None))
         if watchdog.expired or monotonic() >= deadline:
             raise OllamaTimeoutError("Обмен с Ollama превысил отведённый срок.")
         response = connection.getresponse()

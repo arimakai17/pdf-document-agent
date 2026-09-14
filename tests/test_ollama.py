@@ -80,6 +80,78 @@ class BlockingConnection(FakeConnection):
         self.sock = BlockingSocket(self.response)
 
 
+class OwnershipTransferResponse:
+    status = 200
+
+    def __init__(self) -> None:
+        self.closed = False
+        self.close_during_read = False
+        self.aborted = threading.Event()
+        self.read_finished = threading.Event()
+        self.read_started = threading.Event()
+        self._read_active = False
+
+    def read(self, amount: int | None = None) -> bytes:
+        self._read_active = True
+        self.read_started.set()
+        try:
+            if not self.aborted.wait(1.0):
+                raise AssertionError("test transport was not aborted")
+            raise OSError("transport closed")
+        finally:
+            self._read_active = False
+            self.read_finished.set()
+
+    def close(self) -> None:
+        if self._read_active:
+            self.close_during_read = True
+        self.closed = True
+
+
+class OwnershipTransferSocket:
+    def __init__(self, response: OwnershipTransferResponse) -> None:
+        self.response = response
+        self.shutdown_called = False
+
+    def shutdown(self, how: int) -> None:
+        assert how == socket.SHUT_RDWR
+        self.shutdown_called = True
+        self.response.aborted.set()
+
+
+class OwnershipTransferConnection(FakeConnection):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.response = OwnershipTransferResponse()
+        self.retained_socket = OwnershipTransferSocket(self.response)
+        self.sock = self.retained_socket
+
+    def getresponse(self):
+        self.sock = None
+        return self.response
+
+
+def test_chat_with_ollama_retains_socket_after_response_ownership_transfer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    OwnershipTransferConnection.instances.clear()
+    monkeypatch.setattr(ollama, "HTTPConnection", OwnershipTransferConnection)
+
+    started = time.monotonic()
+    with pytest.raises(ollama.OllamaTimeoutError):
+        ollama.chat_with_ollama("system", "user", timeout=0.03)
+    elapsed = time.monotonic() - started
+
+    connection = OwnershipTransferConnection.instances[0]
+    assert elapsed < 0.5
+    assert connection.sock is None
+    assert connection.retained_socket.shutdown_called is True
+    assert connection.response.read_started.is_set()
+    assert connection.response.read_finished.is_set()
+    assert connection.response.closed is True
+    assert connection.response.close_during_read is False
+
+
 def _start_trickle_server(
     *,
     trickle_headers: bool,
