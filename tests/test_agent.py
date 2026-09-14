@@ -168,6 +168,69 @@ def test_evidence_trims_leading_space_before_source_truncation() -> None:
     assert run.final_evidence_packet[0].text.startswith("Python")
 
 
+def test_marker_only_read_page_is_not_evidence_or_final_context() -> None:
+    document, chunks = make_document("<!-- image -->")
+    chat = scripted_chat(
+        [
+            '{"action":"read_page","page":1}',
+            '{"action":"answer_ready"}',
+            "Something [стр. 1].",
+        ]
+    )
+
+    run = run_agent("Что известно?", document, chunks, chat=chat)
+
+    assert run.status == "invalid_action"
+    assert run.answer.text == INSUFFICIENT_ANSWER
+    assert run.final_evidence_packet == ()
+    assert run.llm_calls == 2
+
+
+def test_marker_only_search_result_is_not_evidence_or_final_context() -> None:
+    document, chunks = make_document("<!-- image -->")
+    chat = scripted_chat(
+        [
+            '{"action":"search","query":"image","top_k":1}',
+            '{"action":"answer_ready"}',
+            "Something [стр. 1].",
+        ]
+    )
+
+    run = run_agent("Где image?", document, chunks, chat=chat)
+
+    assert run.status == "invalid_action"
+    assert run.answer.text == INSUFFICIENT_ANSWER
+    assert run.final_evidence_packet == ()
+    assert run.llm_calls == 2
+
+
+def test_truncation_cannot_admit_marker_only_bounded_prefix() -> None:
+    document, chunks = make_document("<!-- image -->Useful facts about Python.")
+    chat = scripted_chat(
+        [
+            '{"action":"search","query":"Python","top_k":1}',
+            '{"action":"answer_ready"}',
+            "Something [стр. 1].",
+        ]
+    )
+
+    run = run_agent(
+        "Что известно?",
+        document,
+        chunks,
+        chat=chat,
+        limits=AgentLimits(
+            max_tool_excerpt_chars=25,
+            max_final_evidence_chars=25,
+        ),
+    )
+
+    assert run.status == "invalid_action"
+    assert run.answer.text == INSUFFICIENT_ANSWER
+    assert run.final_evidence_packet == ()
+    assert run.llm_calls == 2
+
+
 @pytest.mark.parametrize("question", [None, 42, "", "   "])
 def test_invalid_question_is_rejected_before_model_execution(question) -> None:
     document, chunks = make_document("Python facts.")
@@ -484,7 +547,7 @@ def test_provenance_is_bounded_in_packet_payload_and_answer_sources() -> None:
 
 
 def test_citation_allowlist_cannot_expand_after_packet_truncation() -> None:
-    document, chunks = make_document("Python facts.", "Other facts.")
+    document, chunks = make_document("Python facts. " * 20, "Other facts.")
     chat = scripted_chat(
         [
             '{"action":"search","query":"Python","top_k":1}',
@@ -493,11 +556,21 @@ def test_citation_allowlist_cannot_expand_after_packet_truncation() -> None:
         ]
     )
 
-    run = run_agent("Что такое Python?", document, chunks, chat=chat)
+    run = run_agent(
+        "Что такое Python?",
+        document,
+        chunks,
+        chat=chat,
+        limits=AgentLimits(
+            max_tool_excerpt_chars=24,
+            max_final_evidence_chars=24,
+        ),
+    )
 
     assert run.status == "answer_error"
     assert run.answer.text == INSUFFICIENT_ANSWER
     assert run.final_evidence_packet[0].page_number == 1
+    assert run.final_evidence_packet[0].truncated is True
 
 
 def test_document_instruction_is_untrusted_and_cannot_become_action() -> None:

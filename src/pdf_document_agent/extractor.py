@@ -26,7 +26,7 @@ NormalizedBox = tuple[float, float, float, float]
 _GATE_VERSION = "wave2-meaningful-text-v1"
 _WORD_PATTERN = re.compile(r"[^\W_]+(?:[-'][^\W_]+)*", re.UNICODE)
 _MARKDOWN_NOISE = re.compile(
-    r"<!--.*?-->|!\[[^\]]*\]\([^)]*\)|<\/?(?:image|figure)[^>]*>",
+    r"<!--.*?-->|!\[[^\]]*\]\([^)]*\)|<\/?(?:image|figure)[^>]*>|\[truncated\]",
     re.IGNORECASE | re.DOTALL,
 )
 _MAX_MANUAL_OCR_PAGES = 1_000
@@ -412,7 +412,7 @@ def _first_pass_page(
         reason = "manual OCR override"
         should_ocr = True
     elif conversion_diagnostic and significant_raster:
-        reason = "first-pass partial conversion; significant raster detected"
+        reason = "significant raster detected"
         should_ocr = True
     elif text_sufficient:
         should_ocr = False
@@ -623,6 +623,10 @@ def _meaningful_metrics(markdown: str) -> tuple[int, int]:
     chars = len(re.sub(r"\s+", "", cleaned))
     words = len(_WORD_PATTERN.findall(cleaned))
     return chars, words
+
+
+def has_meaningful_text(markdown: str) -> bool:
+    return _meaningful_metrics(markdown)[0] > 0
 
 
 def _text_gate_passes(chars: int, words: int, config: ExtractionConfig) -> bool:

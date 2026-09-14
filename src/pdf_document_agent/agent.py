@@ -17,6 +17,7 @@ from pdf_document_agent.extractor import (
     ExtractedDocument,
     NormalizedBox,
     TextRegion,
+    has_meaningful_text,
 )
 from pdf_document_agent.retrieval import SearchResult, TextChunk, search_chunks
 
@@ -305,7 +306,7 @@ def run_agent(
     def add_evidence(item: EvidenceExcerpt) -> EvidenceExcerpt | None:
         source_text = item.text.strip()
         if (
-            not source_text
+            not has_meaningful_text(source_text)
             or item.evidence_id in evidence_ids
             or len(evidence) >= limits.max_evidence_items
         ):
@@ -318,6 +319,8 @@ def run_agent(
         bounded, truncated = _bounded_text(
             source_text, min(limits.max_tool_excerpt_chars, remaining_chars)
         )
+        if not has_meaningful_text(bounded):
+            return None
         boxes = item.boxes[: limits.max_evidence_boxes]
         regions: list[TextRegion] = []
         provenance_truncated = (

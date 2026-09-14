@@ -397,6 +397,22 @@ def test_extraction_config_is_canonical_and_validated() -> None:
         extractor.ExtractionConfig(ocr_languages="en-US")  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize(
+    ("markdown", "expected"),
+    [
+        ("<!-- image -->", False),
+        ("<!-- image -->[truncated]", False),
+        ("![diagram](diagram.png)", False),
+        ("<!-- image -->Useful source text", True),
+    ],
+)
+def test_has_meaningful_text_removes_known_markdown_and_service_noise(
+    markdown: str,
+    expected: bool,
+) -> None:
+    assert extractor.has_meaningful_text(markdown) is expected
+
+
 def test_text_only_never_constructs_ocr_converter(tmp_path, monkeypatch) -> None:
     pdf_path = tmp_path / "text.pdf"
     pdf_path.write_bytes(b"%PDF")
