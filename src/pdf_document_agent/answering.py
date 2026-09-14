@@ -374,7 +374,7 @@ def _rewrite_search_query(
                 token for token in _tokenize(segment) if token in vocabulary
             )
         )
-        if minimum_terms <= len(segment_terms) <= _MAX_REWRITE_VOCAB_TERMS:
+        if minimum_terms <= len(segment_terms) <= _MAX_REWRITE_TERMS:
             return " ".join(_select_rewrite_terms(segment_terms, chunks))
 
     terms = list(

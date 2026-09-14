@@ -461,22 +461,42 @@ def test_rewrite_selects_first_compact_group_from_real_qwen_output() -> None:
 
 def test_rewrite_selects_six_rarest_terms_in_original_order() -> None:
     chunks = [
-        TextChunk(index=0, page_number=1, text="common alpha"),
-        TextChunk(index=1, page_number=2, text="common beta"),
-        TextChunk(index=2, page_number=3, text="common gamma"),
-        TextChunk(index=3, page_number=4, text="common delta"),
-        TextChunk(index=4, page_number=5, text="common epsilon"),
-        TextChunk(index=5, page_number=6, text="common zeta"),
-        TextChunk(index=6, page_number=7, text="common eta"),
+        TextChunk(index=0, page_number=1, text="common frequent alpha"),
+        TextChunk(index=1, page_number=2, text="common frequent beta"),
+        TextChunk(index=2, page_number=3, text="common frequent gamma"),
+        TextChunk(index=3, page_number=4, text="common frequent delta"),
+        TextChunk(index=4, page_number=5, text="common frequent epsilon"),
+        TextChunk(index=5, page_number=6, text="common frequent zeta"),
     ]
 
     query = _rewrite_search_query(
-        "alpha beta gamma delta epsilon zeta eta common",
+        "alpha beta gamma delta epsilon zeta common frequent",
         chunks,
-        lambda _system, _user: "alpha beta gamma delta epsilon zeta eta common",
+        lambda _system, _user: (
+            "common alpha beta frequent gamma delta epsilon zeta"
+        ),
     )
 
     assert query == "alpha beta gamma delta epsilon zeta"
+
+
+def test_rewrite_rejects_nine_vocabulary_terms_when_first_segment_has_seven() -> None:
+    chunks = [
+        TextChunk(
+            index=0,
+            page_number=1,
+            text="alpha beta gamma delta epsilon zeta eta theta iota",
+        )
+    ]
+
+    with pytest.raises(AnswerGenerationError, match="слишком много терминов"):
+        _rewrite_search_query(
+            "alpha beta gamma delta epsilon zeta eta theta iota",
+            chunks,
+            lambda _system, _user: (
+                "alpha beta gamma delta epsilon zeta eta, theta, iota"
+            ),
+        )
 
 
 def test_rewrite_rejects_more_than_eight_unique_vocabulary_terms() -> None:
@@ -758,38 +778,66 @@ def test_answer_includes_following_chunks_for_section_continuation() -> None:
 def test_follow_up_preserves_distant_ranked_result_when_adding_adjacent_context() -> None:
     chunks = [
         TextChunk(index=0, page_number=1, text="A completely unrelated preface."),
-        TextChunk(index=1, page_number=4, text="An unrelated neighboring passage."),
-        TextChunk(index=2, page_number=3, text="Think Python"),
-        TextChunk(index=3, page_number=4, text="Another unrelated neighboring passage."),
-        TextChunk(index=4, page_number=5, text="Yet another unrelated neighboring passage."),
-        TextChunk(index=5, page_number=6, text="A final unrelated neighboring passage."),
+        TextChunk(
+            index=1,
+            page_number=2,
+            text="Think Python programming concepts introduction.",
+        ),
+        TextChunk(
+            index=2,
+            page_number=3,
+            text="Think Python programming concepts overview.",
+        ),
+        TextChunk(
+            index=3,
+            page_number=4,
+            text="Think Python programming concepts approach.",
+        ),
+        TextChunk(
+            index=4,
+            page_number=5,
+            text="Think Python programming concepts preface.",
+        ),
+        TextChunk(index=5, page_number=6, text="A final unrelated passage."),
         TextChunk(
             index=6,
             page_number=21,
             text=(
-                "Think Python describes mathematics, engineering, and natural "
-                "science as ways to think like a computer scientist."
+                "Think Python explains a computer scientist approach to "
+                "mathematics, engineering, and natural science."
             ),
         ),
     ]
+    rewrite_prompts: list[str] = []
+    language_calls = 0
     answer_prompt: str | None = None
 
     def chat(system_prompt: str, user_prompt: str) -> str:
-        nonlocal answer_prompt
+        nonlocal answer_prompt, language_calls
         if system_prompt == _REWRITE_SYSTEM_PROMPT:
-            return "think python"
+            rewrite_prompts.append(user_prompt)
+            if len(rewrite_prompts) == 1:
+                return "мыслить как компьютерный ученый важные пункты"
+            return "think python programming concepts computer scientist approach"
+        if system_prompt == _LANGUAGE_SYSTEM_PROMPT:
+            language_calls += 1
+            return "English"
         answer_prompt = user_prompt
         return "Автор выделяет математический, инженерный и научный подходы [стр. 21]."
 
     answer = answer_question(
-        'что автор имеет ввиду под "мыслить как компьютерный ученый"?',
+        'что автор имеет ввиду под "мыслить как компьютерный ученый", раскрой важные пункты',
         chunks,
         chat=chat,
         previous_questions=("что имеет ввиду автор под Think Python?",),
     )
 
+    assert len(rewrite_prompts) == 2
+    assert "Target document language: English" in rewrite_prompts[1]
+    assert language_calls == 1
     assert answer_prompt is not None
     assert "[Страница 21]" in answer_prompt
+    assert "mathematics, engineering, and natural science" in answer_prompt
     assert answer.source_pages == (21,)
 
 
@@ -1031,4 +1079,3 @@ def test_citation_range_anomalously_large_rejected() -> None:
             ),
             top_k=1,
         )
-
