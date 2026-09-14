@@ -1,9 +1,10 @@
 """Безопасный дисковый JSON-кэш результатов extraction/chunking PDF.
 
 Кэш хранит только нормализованные результаты (``ExtractedDocument`` и
-``TextChunk``), но никогда исходные PDF-байты. Ключом служит SHA-256
-содержимого PDF, поэтому переименование файла не ломает повторное
-использование. Записи сериализуются в JSON с версией схемы и строго
+``TextChunk``), но никогда исходные PDF-байты. Ключом служат SHA-256
+содержимого PDF, версия схемы и fingerprint extraction config, поэтому
+переименование файла не ломает повторное использование, а смена политики
+не переиспользует устаревший результат. Записи сериализуются в JSON с версией схемы и строго
 восстанавливаются в dataclasses без pickle/eval. Повреждённые, неизвестной
 версии или структурно невалидные записи трактуются как промах и удаляются.
 
@@ -16,15 +17,28 @@ LRU: максимум ``MAX_ENTRIES`` записей; вытесняется с�
 import hashlib
 import json
 import os
+import re
 import tempfile
 from pathlib import Path
 
-from pdf_document_agent.extractor import ExtractedDocument, ExtractedPage, TextRegion
+from pdf_document_agent.extractor import (
+    DEFAULT_EXTRACTION_CONFIG_FINGERPRINT,
+    ExtractedDocument,
+    ExtractedPage,
+    TextRegion,
+)
 from pdf_document_agent.retrieval import TextChunk
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 MAX_ENTRIES = 10
 _CACHE_DIR_ENV = "PDF_DOCUMENT_AGENT_CACHE_DIR"
+_FINGERPRINT_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _validate_fingerprint(value: str) -> str:
+    if type(value) is not str or not _FINGERPRINT_PATTERN.fullmatch(value):
+        raise ValueError("config_fingerprint должен быть SHA-256 в lowercase hex")
+    return value
 
 
 def cache_dir() -> Path:
@@ -35,21 +49,28 @@ def cache_dir() -> Path:
     return Path.home() / ".cache" / "pdf-document-agent"
 
 
-def cache_path(file_bytes: bytes) -> Path:
-    """Путь записи кэша по SHA-256 содержимого (не имени файла)."""
-    key = hashlib.sha256(file_bytes).hexdigest()
-    return cache_dir() / f"{key}.json"
+def cache_path(
+    file_bytes: bytes,
+    *,
+    config_fingerprint: str = DEFAULT_EXTRACTION_CONFIG_FINGERPRINT,
+) -> Path:
+    """Путь записи по PDF SHA-256, schema и extraction policy."""
+    config_fingerprint = _validate_fingerprint(config_fingerprint)
+    pdf_hash = hashlib.sha256(file_bytes).hexdigest()
+    return cache_dir() / f"{pdf_hash}.{SCHEMA_VERSION}.{config_fingerprint}.json"
 
 
 def get(
     file_bytes: bytes,
+    *,
+    config_fingerprint: str = DEFAULT_EXTRACTION_CONFIG_FINGERPRINT,
 ) -> tuple[ExtractedDocument, list[TextChunk]] | None:
     """Вернуть кэшированный результат или ``None`` при промахе.
 
     Повреждённая/невалидная запись удаляется и трактуется как промах. Hit
     обновляет mtime записи (recency), игнорируя гонки с ``clear``.
     """
-    path = cache_path(file_bytes)
+    path = cache_path(file_bytes, config_fingerprint=config_fingerprint)
     try:
         raw = path.read_text(encoding="utf-8")
     except FileNotFoundError:
@@ -59,7 +80,7 @@ def get(
 
     try:
         data = json.loads(raw)
-        document, chunks = _decode(data)
+        document, chunks = _decode(data, config_fingerprint=config_fingerprint)
     except Exception:
         _safe_unlink(path)
         return None
@@ -75,13 +96,18 @@ def put(
     file_bytes: bytes,
     document: ExtractedDocument,
     chunks: list[TextChunk],
+    *,
+    config_fingerprint: str = DEFAULT_EXTRACTION_CONFIG_FINGERPRINT,
 ) -> None:
     """Атомарно сохранить результат и ограничить кэш ``MAX_ENTRIES`` записями."""
+    config_fingerprint = _validate_fingerprint(config_fingerprint)
+    if document.config_fingerprint != config_fingerprint:
+        raise ValueError("document config_fingerprint не совпадает с cache identity")
     directory = cache_dir()
     directory.mkdir(parents=True, exist_ok=True)
-    payload = _encode(document, chunks)
+    payload = _encode(document, chunks, config_fingerprint=config_fingerprint)
     _atomic_write(
-        cache_path(file_bytes),
+        cache_path(file_bytes, config_fingerprint=config_fingerprint),
         json.dumps(payload, ensure_ascii=False, indent=2),
     )
     _prune()
@@ -113,10 +139,16 @@ def _document_to_dict(document: ExtractedDocument) -> dict:
         "source_name": document.source_name,
         "markdown": document.markdown,
         "page_count": document.page_count,
+        "config_fingerprint": document.config_fingerprint,
+        "warnings": list(document.warnings),
         "pages": [
             {
                 "number": page.number,
                 "markdown": page.markdown,
+                "route": page.route,
+                "status": page.status,
+                "reason": page.reason,
+                "diagnostic": page.diagnostic,
                 "regions": [_region_to_dict(region) for region in page.regions],
             }
             for page in document.pages
@@ -134,20 +166,34 @@ def _chunk_to_dict(chunk: TextChunk) -> dict:
     }
 
 
-def _encode(document: ExtractedDocument, chunks: list[TextChunk]) -> dict:
+def _encode(
+    document: ExtractedDocument,
+    chunks: list[TextChunk],
+    *,
+    config_fingerprint: str,
+) -> dict:
     return {
         "schema_version": SCHEMA_VERSION,
+        "extraction_config_fingerprint": config_fingerprint,
         "document": _document_to_dict(document),
         "chunks": [_chunk_to_dict(chunk) for chunk in chunks],
     }
 
 
-def _decode(data) -> tuple[ExtractedDocument, list[TextChunk]]:
+def _decode(
+    data,
+    *,
+    config_fingerprint: str = DEFAULT_EXTRACTION_CONFIG_FINGERPRINT,
+) -> tuple[ExtractedDocument, list[TextChunk]]:
     if type(data) is not dict:
         raise ValueError("корневой объект не dict")
     if data.get("schema_version") != SCHEMA_VERSION:
         raise ValueError("неизвестная schema_version")
+    if data.get("extraction_config_fingerprint") != config_fingerprint:
+        raise ValueError("неверный extraction_config_fingerprint")
     document = _document_from_dict(data["document"])
+    if document.config_fingerprint != config_fingerprint:
+        raise ValueError("document config_fingerprint не совпадает с cache identity")
     chunks = [_chunk_from_dict(item) for item in data["chunks"]]
     return document, chunks
 
@@ -168,6 +214,32 @@ def _as_float(value) -> float:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError("ожидалось число")
     return float(value)
+
+
+def _as_optional_str(value) -> str | None:
+    if value is not None and type(value) is not str:
+        raise ValueError("ожидалась строка или null")
+    return value
+
+
+def _as_route(value) -> str:
+    value = _as_str(value)
+    if value not in {"docling_text", "docling_ocr"}:
+        raise ValueError("неизвестный route")
+    return value
+
+
+def _as_status(value) -> str:
+    value = _as_str(value)
+    if value not in {"ok", "empty", "failed"}:
+        raise ValueError("неизвестный status")
+    return value
+
+
+def _as_warnings(value) -> tuple[str, ...]:
+    if type(value) is not list or any(type(item) is not str for item in value):
+        raise ValueError("warnings должен быть списком строк")
+    return tuple(value)
 
 
 def _as_box(value) -> tuple[float, float, float, float]:
@@ -196,6 +268,10 @@ def _page_from_dict(data) -> ExtractedPage:
     return ExtractedPage(
         number=_as_int(data["number"]),
         markdown=_as_str(data["markdown"]),
+        route=_as_route(data["route"]),
+        status=_as_status(data["status"]),
+        reason=_as_str(data["reason"]),
+        diagnostic=_as_optional_str(data["diagnostic"]),
         regions=tuple(_region_from_dict(region) for region in regions),
     )
 
@@ -228,6 +304,8 @@ def _document_from_dict(data) -> ExtractedDocument:
         source_name=_as_str(data["source_name"]),
         markdown=_as_str(data["markdown"]),
         page_count=_as_int(data["page_count"]),
+        config_fingerprint=_as_str(data["config_fingerprint"]),
+        warnings=_as_warnings(data["warnings"]),
         pages=tuple(_page_from_dict(page) for page in pages),
     )
 

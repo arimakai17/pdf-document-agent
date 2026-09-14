@@ -9,9 +9,12 @@ import streamlit as st
 from pdf_document_agent import cache
 from pdf_document_agent.answering import AnswerGenerationError, answer_question
 from pdf_document_agent.extractor import (
+    DEFAULT_EXTRACTION_CONFIG,
     ExtractedDocument,
+    ExtractionConfig,
     NormalizedBox,
     PdfExtractionError,
+    config_fingerprint,
     extract_pdf,
 )
 from pdf_document_agent.localization import (
@@ -100,6 +103,8 @@ def _mascot_markup(locale: Locale) -> str:
 def prepare_pdf(
     file_bytes: bytes,
     file_name: str,
+    *,
+    config: ExtractionConfig = DEFAULT_EXTRACTION_CONFIG,
 ) -> tuple[ExtractedDocument, list[TextChunk]]:
     """Process an uploaded PDF once and remove the temporary original."""
     if not file_bytes:
@@ -111,20 +116,21 @@ def prepare_pdf(
     if Path(safe_name).suffix.lower() != ".pdf":
         raise ValueError("Требуется файл формата PDF.")
 
-    cached = cache.get(file_bytes)
+    fingerprint = config_fingerprint(config)
+    cached = cache.get(file_bytes, config_fingerprint=fingerprint)
     if cached is not None:
         return cached
 
     with tempfile.TemporaryDirectory(prefix="pdf-agent-") as directory:
         temporary_pdf = Path(directory) / safe_name
         temporary_pdf.write_bytes(file_bytes)
-        document = extract_pdf(temporary_pdf)
+        document = extract_pdf(temporary_pdf, config=config)
 
     chunks = chunk_document(document)
     if not chunks:
         raise PdfExtractionError("В PDF нет текста, пригодного для поиска.")
     try:
-        cache.put(file_bytes, document, chunks)
+        cache.put(file_bytes, document, chunks, config_fingerprint=fingerprint)
     except OSError:
         pass
     return document, chunks
