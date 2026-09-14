@@ -19,12 +19,13 @@ uv run python -m pdf_document_agent.eval_fixtures --output /tmp/pdf-atlas-eval
 
 Генератор строит text-only PDF и пятистраничный mixed PDF (scan, noisy scan,
 same-page digital+raster, scan, blank); их SHA-256 зафиксированы в manifest и
-проверяются тестом. Для реального acceptance corpus в этом репозитории оставлены
-placeholder-записи с незаполненным hash; поэтому текущий gate не может быть
-`pass`.
+проверяются тестом. Реальный acceptance corpus использует два неперсональных
+course PDF, которые не копируются в git: manifest хранит только basename и
+SHA-256, а локальный запуск связывает их с путями вне manifest.
 
-Каждый case задаёт категории, полный текст вопросов, expected per-page `route`
-и `status`, а также явный `ocr_pages` для manual overrides этого запуска.
+Каждый case задаёт категории, полный текст вопросов, reference answer для
+ручной blind-разметки, expected per-page `route` и `status`, а также явный
+`ocr_pages` для manual overrides этого запуска.
 Допустимые routes: `docling_text`, `docling_ocr`; статусы:
 `ok`, `empty`, `failed`. Для answerable вопроса `source_page_sets` содержит
 один или несколько непустых допустимых наборов страниц. Evaluator выбирает

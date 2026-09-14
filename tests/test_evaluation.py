@@ -74,12 +74,14 @@ def _manifest(*, cases: list[dict] | None = None) -> dict:
                         "id": "q-answerable",
                         "text": "What fact is stated?",
                         "answerable": True,
+                        "reference_answer": "The stated fact.",
                         "source_page_sets": [[1], [1, 2]],
                     },
                     {
                         "id": "q-unanswerable",
                         "text": "What fact is absent?",
                         "answerable": False,
+                        "reference_answer": None,
                         "source_page_sets": [],
                     },
                 ],
@@ -98,6 +100,7 @@ def _manifest(*, cases: list[dict] | None = None) -> dict:
                         "id": "q-acceptance",
                         "text": "What acceptance fact is stated?",
                         "answerable": True,
+                        "reference_answer": "The acceptance fact.",
                         "source_page_sets": [[1]],
                     }
                 ],
@@ -351,6 +354,9 @@ def test_missing_observations_and_runtime_failure_are_not_pass_or_zero(tmp_path:
         ),
         lambda data: data["cases"][0]["questions"][1].update(
             {"source_page_sets": [[1]]}
+        ),
+        lambda data: data["cases"][0]["questions"][1].update(
+            {"reference_answer": "invented"}
         ),
     ],
 )

@@ -32,66 +32,109 @@
       "sha256": "335a88b97e9a234299a40f253e2d69c09962a3a2a9009833daf6a88417fda6f4"
     },
     {
-      "id": "real-acceptance-text-pending",
+      "id": "real-acceptance-text",
       "kind": "real",
-      "basename": "real-acceptance-text-pending.pdf",
-      "sha256": null
+      "basename": "lecture08-notes.pdf",
+      "sha256": "62a34aae545a3f6d2dc891dc9cf09ae8bd8c08c2d099756a190e685a5a2fcceb"
     },
     {
-      "id": "real-acceptance-mixed-pending",
+      "id": "real-acceptance-mixed",
       "kind": "real",
-      "basename": "real-acceptance-mixed-pending.pdf",
-      "sha256": null
+      "basename": "1_-_mu-stat-grafiki_-2002-10-11.pdf",
+      "sha256": "569868fff2228ad773fc82e38959f2116e039558fa886f349fb5129ff3cd18a0"
     }
   ],
   "cases": [
     {
       "id": "tuning-text-and-lexical",
       "split": "tuning",
-      "categories": ["text_page", "answerable_similar_words"],
+      "categories": [
+        "text_page",
+        "answerable_similar_words"
+      ],
       "document_id": "synthetic-text-tuning",
       "ocr_pages": [],
       "extraction": [
-        {"page": 1, "route": "docling_text", "status": "ok"},
-        {"page": 2, "route": "docling_text", "status": "ok"}
+        {
+          "page": 1,
+          "route": "docling_text",
+          "status": "ok"
+        },
+        {
+          "page": 2,
+          "route": "docling_text",
+          "status": "ok"
+        }
       ],
       "questions": [
         {
           "id": "q-definition",
           "text": "What color is the atlas marker?",
           "answerable": true,
-          "source_page_sets": [[1]]
+          "source_page_sets": [
+            [
+              1
+            ]
+          ],
+          "reference_answer": "The atlas marker is orange."
         },
         {
           "id": "q-similar-words",
           "text": "Which two steps begin and end the launch sequence?",
           "answerable": true,
-          "source_page_sets": [[1, 2]]
+          "source_page_sets": [
+            [
+              1,
+              2
+            ]
+          ],
+          "reference_answer": "The sequence begins with indexing and ends with citation validation."
         }
       ]
     },
     {
       "id": "tuning-scan-and-noise",
       "split": "tuning",
-      "categories": ["scan_page", "ocr_noise"],
+      "categories": [
+        "scan_page",
+        "ocr_noise"
+      ],
       "document_id": "synthetic-mixed-tuning",
       "ocr_pages": [],
       "extraction": [
-        {"page": 1, "route": "docling_ocr", "status": "ok"},
-        {"page": 2, "route": "docling_ocr", "status": "ok"}
+        {
+          "page": 1,
+          "route": "docling_ocr",
+          "status": "ok"
+        },
+        {
+          "page": 2,
+          "route": "docling_ocr",
+          "status": "ok"
+        }
       ],
       "questions": [
         {
           "id": "q-scanned-fact",
           "text": "What is the river code?",
           "answerable": true,
-          "source_page_sets": [[1]]
+          "source_page_sets": [
+            [
+              1
+            ]
+          ],
+          "reference_answer": "The river code is ORANGE DELTA."
         },
         {
           "id": "q-noisy-fact",
           "text": "What does the noisy signal say?",
           "answerable": true,
-          "source_page_sets": [[2]]
+          "source_page_sets": [
+            [
+              2
+            ]
+          ],
+          "reference_answer": "The noisy signal says COPPER NINE."
         }
       ]
     },
@@ -104,93 +147,197 @@
         "blank_sparse_page"
       ],
       "document_id": "synthetic-mixed-tuning",
-      "ocr_pages": [3],
+      "ocr_pages": [
+        3
+      ],
       "extraction": [
-        {"page": 3, "route": "docling_ocr", "status": "ok"},
-        {"page": 4, "route": "docling_ocr", "status": "ok"},
-        {"page": 5, "route": "docling_text", "status": "empty"}
+        {
+          "page": 3,
+          "route": "docling_ocr",
+          "status": "ok"
+        },
+        {
+          "page": 4,
+          "route": "docling_ocr",
+          "status": "ok"
+        },
+        {
+          "page": 5,
+          "route": "docling_text",
+          "status": "empty"
+        }
       ],
       "questions": [
         {
           "id": "q-mixed-page",
           "text": "What are the digital control token and raster panel token?",
           "answerable": true,
-          "source_page_sets": [[3]]
+          "source_page_sets": [
+            [
+              3
+            ]
+          ],
+          "reference_answer": "The digital token is ALPHA and the raster panel token is BRAVO."
         },
         {
           "id": "q-alternating-scan",
           "text": "What is the archive key on the next scanned page?",
           "answerable": true,
-          "source_page_sets": [[4]]
+          "source_page_sets": [
+            [
+              4
+            ]
+          ],
+          "reference_answer": "The archive key is LANTERN."
         },
         {
           "id": "q-sparse-refusal",
           "text": "Which contract number appears on the blank page?",
           "answerable": false,
-          "source_page_sets": []
+          "source_page_sets": [],
+          "reference_answer": null
         }
       ]
     },
     {
-      "id": "acceptance-multipage-pending",
+      "id": "acceptance-multipage",
       "split": "acceptance",
-      "categories": ["multi_page_answer", "ambiguous_lexical_matches"],
-      "document_id": "real-acceptance-text-pending",
+      "categories": [
+        "multi_page_answer",
+        "ambiguous_lexical_matches"
+      ],
+      "document_id": "real-acceptance-text",
       "ocr_pages": [],
       "extraction": [
-        {"page": 1, "route": "docling_text", "status": "ok"},
-        {"page": 2, "route": "docling_text", "status": "ok"},
-        {"page": 3, "route": "docling_text", "status": "ok"}
+        {
+          "page": 1,
+          "route": "docling_text",
+          "status": "ok"
+        },
+        {
+          "page": 2,
+          "route": "docling_text",
+          "status": "ok"
+        },
+        {
+          "page": 3,
+          "route": "docling_text",
+          "status": "ok"
+        },
+        {
+          "page": 4,
+          "route": "docling_text",
+          "status": "ok"
+        },
+        {
+          "page": 5,
+          "route": "docling_text",
+          "status": "ok"
+        },
+        {
+          "page": 6,
+          "route": "docling_text",
+          "status": "ok"
+        },
+        {
+          "page": 7,
+          "route": "docling_text",
+          "status": "ok"
+        }
       ],
       "questions": [
         {
           "id": "q-multi-page",
-          "text": "Pending held-out multi-page question.",
+          "text": "Назови пять шагов агента веб-исследования и два последних совета по практике.",
           "answerable": true,
-          "source_page_sets": [[1, 2], [2, 3]]
+          "reference_answer": "Агент получает вопрос, выполняет веб-поиск, скрапит три релевантные страницы, генерирует ответ через LLM и указывает источники. Последние советы: уважать robots.txt и кэшировать результаты.",
+          "source_page_sets": [
+            [
+              6,
+              7
+            ]
+          ]
         },
         {
           "id": "q-ambiguous-refusal",
-          "text": "Pending held-out ambiguous lexical question.",
+          "text": "Каков секретный API-ключ автора для Exa?",
           "answerable": false,
+          "reference_answer": null,
           "source_page_sets": []
         }
       ]
     },
     {
-      "id": "acceptance-similar-words-pending",
+      "id": "acceptance-similar-words",
       "split": "acceptance",
-      "categories": ["unanswerable_similar_words"],
-      "document_id": "real-acceptance-text-pending",
+      "categories": [
+        "unanswerable_similar_words"
+      ],
+      "document_id": "real-acceptance-text",
       "ocr_pages": [],
       "extraction": [
-        {"page": 1, "route": "docling_text", "status": "ok"}
+        {
+          "page": 1,
+          "route": "docling_text",
+          "status": "ok"
+        }
       ],
       "questions": [
         {
           "id": "q-similar-but-absent",
-          "text": "Pending held-out similar-words refusal question.",
+          "text": "Какова гарантированная точность Google Search в процентах?",
           "answerable": false,
+          "reference_answer": null,
           "source_page_sets": []
         }
       ]
     },
     {
-      "id": "acceptance-mixed-pending",
+      "id": "acceptance-mixed",
       "split": "acceptance",
-      "categories": ["same_page_text_raster", "alternating_mixed_pages"],
-      "document_id": "real-acceptance-mixed-pending",
-      "ocr_pages": [],
+      "categories": [
+        "same_page_text_raster",
+        "alternating_mixed_pages"
+      ],
+      "document_id": "real-acceptance-mixed",
+      "ocr_pages": [
+        1,
+        2
+      ],
       "extraction": [
-        {"page": 1, "route": "docling_text", "status": "ok"},
-        {"page": 2, "route": "docling_ocr", "status": "ok"}
+        {
+          "page": 1,
+          "route": "docling_ocr",
+          "status": "ok"
+        },
+        {
+          "page": 2,
+          "route": "docling_ocr",
+          "status": "ok"
+        }
       ],
       "questions": [
         {
           "id": "q-mixed-acceptance",
-          "text": "Pending held-out same-page mixed-content question.",
+          "text": "Какие три способа размещения столбиков перечислены в тексте?",
           "answerable": true,
-          "source_page_sets": [[1, 2]]
+          "reference_answer": "На одинаковом расстоянии друг от друга, вплотную друг к другу и с частичным наложением друг на друга.",
+          "source_page_sets": [
+            [
+              1
+            ]
+          ]
+        },
+        {
+          "id": "q-chart-values",
+          "text": "Какие значения выпуска книг и брошюр указаны за 1995, 1996 и 1997 годы на рисунке 8?",
+          "answerable": true,
+          "reference_answer": "49,8; 57,1; 41,2 тыс. печатных единиц соответственно.",
+          "source_page_sets": [
+            [
+              2
+            ]
+          ]
         }
       ]
     }

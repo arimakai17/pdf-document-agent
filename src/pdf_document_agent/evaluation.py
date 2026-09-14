@@ -129,6 +129,7 @@ class QuestionSpec:
     question_id: str
     text: str
     answerable: bool
+    reference_answer: str | None
     source_page_sets: tuple[tuple[int, ...], ...]
 
     def __post_init__(self) -> None:
@@ -136,6 +137,10 @@ class QuestionSpec:
         _require_nonempty_string(self.text, "question text")
         if type(self.answerable) is not bool:
             raise ValueError("question answerable must be boolean")
+        if self.answerable:
+            _require_nonempty_string(self.reference_answer, "reference answer")
+        elif self.reference_answer is not None:
+            raise ValueError("unanswerable question must have null reference answer")
         for page_set in self.source_page_sets:
             _validate_pages(page_set, "source page set")
         if self.answerable and (
@@ -458,7 +463,13 @@ def load_manifest(path: str | Path) -> Manifest:
             question = _strict_object(
                 raw_question,
                 f"cases[{index}].questions[{question_index}]",
-                {"id", "text", "answerable", "source_page_sets"},
+                {
+                    "id",
+                    "text",
+                    "answerable",
+                    "reference_answer",
+                    "source_page_sets",
+                },
             )
             source_sets = question["source_page_sets"]
             if type(source_sets) is not list:
@@ -473,11 +484,15 @@ def load_manifest(path: str | Path) -> Manifest:
             answerable = question["answerable"]
             if type(answerable) is not bool:
                 raise ValueError("question answerable must be boolean")
+            reference_answer = question["reference_answer"]
+            if reference_answer is not None and type(reference_answer) is not str:
+                raise ValueError("reference answer must be string or null")
             questions.append(
                 QuestionSpec(
                     question_id,
                     question_text,
                     answerable,
+                    reference_answer,
                     tuple(parsed_sets),
                 )
             )
