@@ -35,7 +35,6 @@
         "llm_calls": 28,
         "tool_steps": 0,
         "timeouts": 0,
-        "errors": 0,
         "total_latency_s": 221.94143254170194,
         "latency_median_s": 5.908281083684415,
         "max_llm_calls": 4,
@@ -43,7 +42,9 @@
         "max_latency_s": 65.26436220901087,
         "status_counts": {
           "ok": 12
-        }
+        },
+        "uncaught_errors": 0,
+        "citation_validation_basis": "answering context-membership guard; fixed mode exposes no final evidence packet"
       },
       "questions": [
         {
@@ -57,10 +58,8 @@
           "source_pages": [
             1
           ],
-          "final_evidence_pages": [
-            1
-          ],
-          "final_evidence_ids": [],
+          "final_evidence_pages": null,
+          "final_evidence_ids": null,
           "status": "ok",
           "response_sha256": "211f97b9551d4b8282e18714cba5e46ab5033a849f46a63a9a3025ccce0f902e",
           "refused": false,
@@ -69,7 +68,8 @@
           "latency_s": 7.679183542262763,
           "manual_correctness": 2,
           "claim_support": 2,
-          "error": null
+          "error": null,
+          "citation_context_membership_validated": true
         },
         {
           "question_id": "q-similar-words",
@@ -83,10 +83,8 @@
           "source_pages": [
             1
           ],
-          "final_evidence_pages": [
-            1
-          ],
-          "final_evidence_ids": [],
+          "final_evidence_pages": null,
+          "final_evidence_ids": null,
           "status": "ok",
           "response_sha256": "628029f269c0caecde0254c9225fa2280e24b422d0147d031b1b4a3f984b1fbb",
           "refused": false,
@@ -95,7 +93,8 @@
           "latency_s": 2.836337666027248,
           "manual_correctness": 2,
           "claim_support": 1,
-          "error": null
+          "error": null,
+          "citation_context_membership_validated": true
         },
         {
           "question_id": "q-scanned-fact",
@@ -108,10 +107,8 @@
           "source_pages": [
             1
           ],
-          "final_evidence_pages": [
-            1
-          ],
-          "final_evidence_ids": [],
+          "final_evidence_pages": null,
+          "final_evidence_ids": null,
           "status": "ok",
           "response_sha256": "f8e21af5e669d6b69b96cb1718ac65ce139c18a32505d1a0f26a2b54e28723b1",
           "refused": false,
@@ -120,7 +117,8 @@
           "latency_s": 3.9999722908250988,
           "manual_correctness": 2,
           "claim_support": 2,
-          "error": null
+          "error": null,
+          "citation_context_membership_validated": true
         },
         {
           "question_id": "q-noisy-fact",
@@ -133,10 +131,8 @@
           "source_pages": [
             2
           ],
-          "final_evidence_pages": [
-            2
-          ],
-          "final_evidence_ids": [],
+          "final_evidence_pages": null,
+          "final_evidence_ids": null,
           "status": "ok",
           "response_sha256": "948f445bcd88a45de23dee2b97bc3f717c31895c76f4d5ba8525a0ad9dde86ef",
           "refused": false,
@@ -145,7 +141,8 @@
           "latency_s": 3.175945916213095,
           "manual_correctness": 2,
           "claim_support": 2,
-          "error": null
+          "error": null,
+          "citation_context_membership_validated": true
         },
         {
           "question_id": "q-mixed-page",
@@ -158,10 +155,8 @@
           "source_pages": [
             3
           ],
-          "final_evidence_pages": [
-            3
-          ],
-          "final_evidence_ids": [],
+          "final_evidence_pages": null,
+          "final_evidence_ids": null,
           "status": "ok",
           "response_sha256": "881419ab0e12220ff9eb4141e8f07db10cd4798192842fc3d6d37a3ebecff882",
           "refused": false,
@@ -170,7 +165,8 @@
           "latency_s": 4.1373786251060665,
           "manual_correctness": 2,
           "claim_support": 2,
-          "error": null
+          "error": null,
+          "citation_context_membership_validated": true
         },
         {
           "question_id": "q-alternating-scan",
@@ -183,10 +179,8 @@
           "source_pages": [
             4
           ],
-          "final_evidence_pages": [
-            4
-          ],
-          "final_evidence_ids": [],
+          "final_evidence_pages": null,
+          "final_evidence_ids": null,
           "status": "ok",
           "response_sha256": "a337cdb6341116952d4d871bdd368539b3b7f6d452fe8e2db3c52b28d96e042a",
           "refused": false,
@@ -195,7 +189,8 @@
           "latency_s": 2.9978125831112266,
           "manual_correctness": 2,
           "claim_support": 2,
-          "error": null
+          "error": null,
+          "citation_context_membership_validated": true
         },
         {
           "question_id": "q-sparse-refusal",
@@ -204,8 +199,8 @@
           "answerable": false,
           "expected_source_pages": [],
           "source_pages": [],
-          "final_evidence_pages": [],
-          "final_evidence_ids": [],
+          "final_evidence_pages": null,
+          "final_evidence_ids": null,
           "status": "ok",
           "response_sha256": "04deadef76dbf21f0b936afd452ef20b56138fdf610eebfd8f4f0e5ef9051979",
           "refused": true,
@@ -214,7 +209,8 @@
           "latency_s": 3.809806833975017,
           "manual_correctness": 2,
           "claim_support": 2,
-          "error": null
+          "error": null,
+          "citation_context_membership_validated": true
         },
         {
           "question_id": "q-multi-page",
@@ -229,11 +225,8 @@
             5,
             6
           ],
-          "final_evidence_pages": [
-            5,
-            6
-          ],
-          "final_evidence_ids": [],
+          "final_evidence_pages": null,
+          "final_evidence_ids": null,
           "status": "ok",
           "response_sha256": "a51b4c1f1667692bdf63ce636967d6bb4075184efe88eb481c5656c910f8c978",
           "refused": false,
@@ -242,7 +235,8 @@
           "latency_s": 36.47577937506139,
           "manual_correctness": 1,
           "claim_support": 1,
-          "error": null
+          "error": null,
+          "citation_context_membership_validated": true
         },
         {
           "question_id": "q-ambiguous-refusal",
@@ -251,8 +245,8 @@
           "answerable": false,
           "expected_source_pages": [],
           "source_pages": [],
-          "final_evidence_pages": [],
-          "final_evidence_ids": [],
+          "final_evidence_pages": null,
+          "final_evidence_ids": null,
           "status": "ok",
           "response_sha256": "04deadef76dbf21f0b936afd452ef20b56138fdf610eebfd8f4f0e5ef9051979",
           "refused": true,
@@ -261,7 +255,8 @@
           "latency_s": 65.26436220901087,
           "manual_correctness": 2,
           "claim_support": 2,
-          "error": null
+          "error": null,
+          "citation_context_membership_validated": true
         },
         {
           "question_id": "q-similar-but-absent",
@@ -270,8 +265,8 @@
           "answerable": false,
           "expected_source_pages": [],
           "source_pages": [],
-          "final_evidence_pages": [],
-          "final_evidence_ids": [],
+          "final_evidence_pages": null,
+          "final_evidence_ids": null,
           "status": "ok",
           "response_sha256": "04deadef76dbf21f0b936afd452ef20b56138fdf610eebfd8f4f0e5ef9051979",
           "refused": true,
@@ -280,7 +275,8 @@
           "latency_s": 48.73930437490344,
           "manual_correctness": 2,
           "claim_support": 2,
-          "error": null
+          "error": null,
+          "citation_context_membership_validated": true
         },
         {
           "question_id": "q-mixed-acceptance",
@@ -291,8 +287,8 @@
             1
           ],
           "source_pages": [],
-          "final_evidence_pages": [],
-          "final_evidence_ids": [],
+          "final_evidence_pages": null,
+          "final_evidence_ids": null,
           "status": "ok",
           "response_sha256": "04deadef76dbf21f0b936afd452ef20b56138fdf610eebfd8f4f0e5ef9051979",
           "refused": true,
@@ -301,7 +297,8 @@
           "latency_s": 27.09207550017163,
           "manual_correctness": 0,
           "claim_support": 0,
-          "error": null
+          "error": null,
+          "citation_context_membership_validated": true
         },
         {
           "question_id": "q-chart-values",
@@ -312,8 +309,8 @@
             2
           ],
           "source_pages": [],
-          "final_evidence_pages": [],
-          "final_evidence_ids": [],
+          "final_evidence_pages": null,
+          "final_evidence_ids": null,
           "status": "ok",
           "response_sha256": "04deadef76dbf21f0b936afd452ef20b56138fdf610eebfd8f4f0e5ef9051979",
           "refused": true,
@@ -322,7 +319,8 @@
           "latency_s": 15.733473625034094,
           "manual_correctness": 0,
           "claim_support": 0,
-          "error": null
+          "error": null,
+          "citation_context_membership_validated": true
         }
       ]
     },
@@ -343,7 +341,6 @@
         "llm_calls": 44,
         "tool_steps": 23,
         "timeouts": 0,
-        "errors": 0,
         "total_latency_s": 196.2690888340585,
         "latency_median_s": 10.027464979561046,
         "max_llm_calls": 6,
@@ -353,7 +350,10 @@
           "ok": 8,
           "answer_error": 1,
           "invalid_action": 3
-        }
+        },
+        "uncaught_errors": 0,
+        "citation_validation_basis": "explicit source_pages subset of host-built final evidence packet",
+        "fail_closed_non_ok_runs": 4
       },
       "questions": [
         {
