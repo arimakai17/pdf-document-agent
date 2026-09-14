@@ -137,22 +137,35 @@ def chat_with_ollama(
 
     watchdog = _ExchangeWatchdog(deadline)
     response = None
+    exchange_socket = None
     try:
         watchdog.start()
+        connection.timeout = max(0.001, deadline - monotonic())
+        if getattr(connection, "sock", None) is None:
+            connection.connect()
+        exchange_socket = getattr(connection, "sock", None)
+        watchdog.register_socket(exchange_socket)
+        if exchange_socket is not None:
+            exchange_socket.settimeout(max(0.001, deadline - monotonic()))
+        if watchdog.expired or monotonic() >= deadline:
+            raise OllamaTimeoutError("Обмен с Ollama превысил отведённый срок.")
         connection.request(
             "POST",
             path,
             body=request_body,
             headers={"Content-Type": "application/json"},
         )
-        watchdog.register_socket(getattr(connection, "sock", None))
         if watchdog.expired or monotonic() >= deadline:
             raise OllamaTimeoutError("Обмен с Ollama превысил отведённый срок.")
+        if exchange_socket is not None:
+            exchange_socket.settimeout(max(0.001, deadline - monotonic()))
         response = connection.getresponse()
         if watchdog.expired or monotonic() >= deadline:
             raise OllamaTimeoutError("Обмен с Ollama превысил отведённый срок.")
         if response.status >= 400:
             raise OllamaError(f"Ollama вернул HTTP-ошибку {response.status}.")
+        if exchange_socket is not None:
+            exchange_socket.settimeout(max(0.001, deadline - monotonic()))
         response_body = response.read(_MAX_RESPONSE_BYTES + 1)
         if watchdog.expired or monotonic() >= deadline:
             raise OllamaTimeoutError("Обмен с Ollama превысил отведённый срок.")

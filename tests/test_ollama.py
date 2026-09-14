@@ -32,8 +32,12 @@ class FakeConnection:
         self.timeout = timeout
         self.request_args = None
         self.response = FakeResponse({"message": {"content": "Ответ [стр. 1]."}})
+        self.sock = None
         self.closed = False
         type(self).instances.append(self)
+
+    def connect(self) -> None:
+        pass
 
     def request(self, method, path, body, headers):
         self.request_args = (method, path, body, headers)
@@ -44,6 +48,45 @@ class FakeConnection:
     def close(self) -> None:
         self.closed = True
         self.response.close()
+
+
+class PreRequestSocket:
+    def __init__(self) -> None:
+        self.shutdown_called = False
+        self.shutdown_during_send = False
+        self.timeout = None
+        self._shutdown = threading.Event()
+
+    def sendall(self, _body: bytes) -> None:
+        self._shutdown.wait(0.4)
+        self.shutdown_during_send = self.shutdown_called
+        raise OSError("transport closed")
+
+    def shutdown(self, how: int) -> None:
+        assert how == socket.SHUT_RDWR
+        self.shutdown_called = True
+        self._shutdown.set()
+
+    def settimeout(self, timeout: float) -> None:
+        self.timeout = timeout
+
+
+class PreRequestHTTPSConnection(FakeConnection):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.sock = None
+        self.connect_finished = threading.Event()
+
+    def connect(self) -> None:
+        self.sock = PreRequestSocket()
+        time.sleep(0.15)
+        self.connect_finished.set()
+
+    def request(self, method, path, body, headers):
+        if self.sock is None:
+            self.connect()
+        self.request_args = (method, path, body, headers)
+        self.sock.sendall(body)
 
 
 class BlockingResponse:
@@ -71,6 +114,9 @@ class BlockingSocket:
         assert how == socket.SHUT_RDWR
         self.shutdown_called = True
         self.response.aborted.set()
+
+    def settimeout(self, timeout: float) -> None:
+        self.timeout = timeout
 
 
 class BlockingConnection(FakeConnection):
@@ -118,6 +164,9 @@ class OwnershipTransferSocket:
         self.shutdown_called = True
         self.response.aborted.set()
 
+    def settimeout(self, timeout: float) -> None:
+        self.timeout = timeout
+
 
 class OwnershipTransferConnection(FakeConnection):
     def __init__(self, *args, **kwargs):
@@ -150,6 +199,33 @@ def test_chat_with_ollama_retains_socket_after_response_ownership_transfer(
     assert connection.response.read_finished.is_set()
     assert connection.response.closed is True
     assert connection.response.close_during_read is False
+
+
+def test_chat_with_ollama_aborts_https_upload_after_connect_uses_remaining_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    PreRequestHTTPSConnection.instances.clear()
+    monkeypatch.setattr(ollama, "HTTPSConnection", PreRequestHTTPSConnection)
+    watchdogs = _track_watchdog_threads(monkeypatch)
+
+    started = time.monotonic()
+    with pytest.raises(ollama.OllamaTimeoutError):
+        ollama.chat_with_ollama(
+            "system",
+            "user",
+            base_url="https://127.0.0.1:11434",
+            timeout=0.5,
+        )
+    elapsed = time.monotonic() - started
+
+    connection = PreRequestHTTPSConnection.instances[0]
+    assert elapsed < 0.8
+    assert connection.connect_finished.is_set()
+    assert 0 < connection.sock.timeout < 0.4
+    assert connection.sock.shutdown_during_send is True
+    assert connection.sock.shutdown_called is True
+    assert len(watchdogs) == 1
+    assert watchdogs[0].is_alive() is False
 
 
 def _start_trickle_server(
