@@ -1,0 +1,183 @@
+{
+  "schema_version": 1,
+  "receipt_type": "corrected_actual_ocr_work",
+  "measurement": {
+    "definition": "Count a page only when OcrMacModel.get_ocr_rects returns at least one non-zero region; every such region enters reader_RIL(...).recognize() in installed Docling.",
+    "docling_version": "2.126.0",
+    "ocrmac_version": "1.0.1",
+    "A_commit": "1f7dcc0ee3cd652a3d00688e142d7da33fce802a",
+    "B_commit": "d3a74e62175ba6459eff317fbc3de22cdfd53e0b",
+    "source_receipt_sha256": {
+      "A": "033d402e67fe1e39029e53af4bd9d209ec5959bf8987b394182bc60533508918",
+      "B": "278dbbffab6cc417c2987477733298169599ed9b3bf0e81c31c7281c3ef4dd1e",
+      "B_default": "e9028c2afb3682ddcabbec6ec374ce68544eef889684d042cc253a693d219e6a"
+    },
+    "source_receipt_note": "The comparison receipt is authoritative for the corrected totals; the A/B page receipts provide the hash-bound artifact events and page lists."
+  },
+  "declared_artifact_ids": [
+    "synthetic-text-default",
+    "synthetic-mixed-default",
+    "synthetic-mixed-override-3",
+    "real-text-default",
+    "real-mixed-override-1-2"
+  ],
+  "artifact_receipts": {
+    "A": [
+      {
+        "id": "synthetic-text-default",
+        "pdf_sha256": "3c109fdc37598cc489f0ee6ef9d4d92414f9df22a676a81bb37c504e315a0a2f",
+        "page_count": 2,
+        "ocr_pages_processed": [],
+        "ocr_page_count": 0,
+        "ocr_region_count": 0,
+        "ocr_regions_by_page": {}
+      },
+      {
+        "id": "synthetic-mixed-default",
+        "pdf_sha256": "335a88b97e9a234299a40f253e2d69c09962a3a2a9009833daf6a88417fda6f4",
+        "page_count": 5,
+        "ocr_pages_processed": [1, 2, 3, 4],
+        "ocr_page_count": 4,
+        "ocr_region_count": 4,
+        "ocr_regions_by_page": {"1": 1, "2": 1, "3": 1, "4": 1}
+      },
+      {
+        "id": "synthetic-mixed-override-3",
+        "pdf_sha256": "335a88b97e9a234299a40f253e2d69c09962a3a2a9009833daf6a88417fda6f4",
+        "page_count": 5,
+        "ocr_pages_processed": [1, 2, 3, 4],
+        "ocr_page_count": 4,
+        "ocr_region_count": 4,
+        "ocr_regions_by_page": {"1": 1, "2": 1, "3": 1, "4": 1}
+      },
+      {
+        "id": "real-text-default",
+        "pdf_sha256": "62a34aae545a3f6d2dc891dc9cf09ae8bd8c08c2d099756a190e685a5a2fcceb",
+        "page_count": 7,
+        "ocr_pages_processed": [1, 2, 3, 5, 6],
+        "ocr_page_count": 5,
+        "ocr_region_count": 17,
+        "ocr_regions_by_page": {"1": 4, "2": 5, "3": 3, "5": 1, "6": 4}
+      },
+      {
+        "id": "real-mixed-override-1-2",
+        "pdf_sha256": "569868fff2228ad773fc82e38959f2116e039558fa886f349fb5129ff3cd18a0",
+        "page_count": 2,
+        "ocr_pages_processed": [1, 2],
+        "ocr_page_count": 2,
+        "ocr_region_count": 3,
+        "ocr_regions_by_page": {"1": 1, "2": 2}
+      }
+    ],
+    "B": [
+      {
+        "id": "synthetic-text-default",
+        "pdf_sha256": "3c109fdc37598cc489f0ee6ef9d4d92414f9df22a676a81bb37c504e315a0a2f",
+        "page_count": 2,
+        "ocr_pages_override": [],
+        "ocr_pages_processed": [],
+        "ocr_page_count": 0,
+        "ocr_region_count": 0,
+        "ocr_regions_by_page": {}
+      },
+      {
+        "id": "synthetic-mixed-default",
+        "pdf_sha256": "335a88b97e9a234299a40f253e2d69c09962a3a2a9009833daf6a88417fda6f4",
+        "page_count": 5,
+        "ocr_pages_override": [],
+        "ocr_pages_processed": [1, 2, 4],
+        "ocr_page_count": 3,
+        "ocr_region_count": 3,
+        "ocr_regions_by_page": {"1": 1, "2": 1, "4": 1}
+      },
+      {
+        "id": "synthetic-mixed-override-3",
+        "pdf_sha256": "335a88b97e9a234299a40f253e2d69c09962a3a2a9009833daf6a88417fda6f4",
+        "page_count": 5,
+        "ocr_pages_override": [3],
+        "ocr_pages_processed": [1, 2, 3, 4],
+        "ocr_page_count": 4,
+        "ocr_region_count": 4,
+        "ocr_regions_by_page": {"1": 1, "2": 1, "3": 1, "4": 1}
+      },
+      {
+        "id": "real-text-default",
+        "pdf_sha256": "62a34aae545a3f6d2dc891dc9cf09ae8bd8c08c2d099756a190e685a5a2fcceb",
+        "page_count": 7,
+        "ocr_pages_override": [],
+        "ocr_pages_processed": [],
+        "ocr_page_count": 0,
+        "ocr_region_count": 0,
+        "ocr_regions_by_page": {}
+      },
+      {
+        "id": "real-mixed-override-1-2",
+        "pdf_sha256": "569868fff2228ad773fc82e38959f2116e039558fa886f349fb5129ff3cd18a0",
+        "page_count": 2,
+        "ocr_pages_override": [1, 2],
+        "ocr_pages_processed": [1, 2],
+        "ocr_page_count": 2,
+        "ocr_region_count": 2,
+        "ocr_regions_by_page": {"1": 1, "2": 1}
+      },
+      {
+        "id": "real-mixed-default",
+        "pdf_sha256": "569868fff2228ad773fc82e38959f2116e039558fa886f349fb5129ff3cd18a0",
+        "page_count": 2,
+        "ocr_pages_override": [],
+        "ocr_pages_processed": [],
+        "ocr_page_count": 0,
+        "ocr_region_count": 0,
+        "ocr_regions_by_page": {}
+      }
+    ]
+  },
+  "case_mapping": [
+    {"case_id": "tuning-text-and-lexical", "A_artifact_id": "synthetic-text-default", "A_ocr_pages_processed": 0, "B_artifact_id": "synthetic-text-default", "B_ocr_pages_processed": 0},
+    {"case_id": "tuning-scan-and-noise", "A_artifact_id": "synthetic-mixed-default", "A_ocr_pages_processed": 4, "B_artifact_id": "synthetic-mixed-default", "B_ocr_pages_processed": 3},
+    {"case_id": "tuning-mixed-and-sparse", "A_artifact_id": "synthetic-mixed-override-3", "A_ocr_pages_processed": 4, "B_artifact_id": "synthetic-mixed-override-3", "B_ocr_pages_processed": 4},
+    {"case_id": "acceptance-multipage", "A_artifact_id": "real-text-default", "A_ocr_pages_processed": 5, "B_artifact_id": "real-text-default", "B_ocr_pages_processed": 0},
+    {"case_id": "acceptance-similar-words", "A_artifact_id": "real-text-default", "A_ocr_pages_processed": 5, "B_artifact_id": "real-text-default", "B_ocr_pages_processed": 0},
+    {"case_id": "acceptance-mixed-default", "A_artifact_id": "real-mixed-override-1-2", "A_ocr_pages_processed": 2, "B_artifact_id": "real-mixed-default", "B_ocr_pages_processed": 0},
+    {"case_id": "acceptance-mixed-visual-override", "A_artifact_id": "real-mixed-override-1-2", "A_ocr_pages_processed": 2, "B_artifact_id": "real-mixed-override-1-2", "B_ocr_pages_processed": 2}
+  ],
+  "totals": {
+    "declared_artifact_runs": {
+      "A_actual_recognition_pages": 15,
+      "B_actual_recognition_pages": 9,
+      "A_regions": 28,
+      "B_regions": 9,
+      "page_reduction_fraction": 0.4,
+      "page_reduction_percent": 40.0,
+      "B_over_A": 0.6
+    },
+    "diagnostic_stage_visits": {
+      "A": 21,
+      "B": 9,
+      "reduction_fraction": 0.5714285714285714,
+      "note": "OCR-enabled stage visits are not equivalent to actual recognition work and do not override the predeclared gate."
+    },
+    "case_weighted_runs": {
+      "A": 22,
+      "B": 9,
+      "reduction_fraction": 0.5909090909090909,
+      "B_over_A": 0.4090909090909091,
+      "note": "This was not the predeclared hard gate and cannot rescue it."
+    }
+  },
+  "predeclared_gate": {
+    "name": "B_OCR_pages_at_most_half_A_on_unique_declared_artifacts",
+    "requirement": "B must process at most half as many actual recognition pages as A over the five declared artifacts.",
+    "threshold_B_pages": 7.5,
+    "threshold_B_over_A": 0.5,
+    "observed_A_pages": 15,
+    "observed_B_pages": 9,
+    "observed_B_over_A": 0.6,
+    "passed": false,
+    "decision": "HOLD_B_EXTRACTION"
+  },
+  "limitations": [
+    "A had no per-page route state; A route correctness 6/19 is a synthetic legacy-policy label, not actual OCR recognition.",
+    "No local absolute PDF paths or raw PDF text are stored in this receipt."
+  ]
+}

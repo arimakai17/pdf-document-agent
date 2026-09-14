@@ -4,19 +4,21 @@ Date: 2026-09-14 (Asia/Almaty)
 
 ## Decision
 
-**PROMOTE B EXTRACTION.** Adaptive per-page extraction becomes the default
-extraction layer. This promotion does not claim that fixed retrieval is solved:
-both A and B still fail the same four source-recall cases and two answerable
-questions. The result is sufficient to begin the separately gated C agent
-experiment because B changes extraction routes without regressing the measured
-answer/citation/refusal vector.
+**HOLD B EXTRACTION.** The corrected OCR measurement fails the predeclared
+hard gate. B is not approved for merge or release. Within this candidate branch
+only, B remains the technical fixed default because A is a frozen external
+baseline and is not an in-app mode. This does not claim that fixed retrieval is
+solved: both A and B still fail the same four source-recall cases and two
+answerable questions.
+The V1 tag/main baseline remains the released/default baseline.
 
 Confidence: **moderate**. Extraction was repeated three times with stable output
 hashes. QA used one local-model run and manual labels that were not independently
 blinded, so it is regression evidence rather than a strong absolute quality
 estimate.
 
-Machine-readable receipt: `evals/results/ab-2026-09-14.json`.
+Machine-readable receipts: `evals/results/ab-2026-09-14.json` and the corrected
+OCR work receipt `evals/results/ab-ocr-work-2026-09-14.json`.
 
 ## Baseline and candidate
 
@@ -54,7 +56,8 @@ fixed. Before two repeat runs, the following practical gates were declared:
 - citation validity, refusal behavior, manual correctness and support must not
   regress.
 
-All these comparative gates passed.
+The latency, error, and QA-vector comparisons remain as measured below. The
+corrected OCR hard gate fails; therefore the overall A→B decision is HOLD.
 
 ## Extraction evidence
 
@@ -73,10 +76,21 @@ Sum of artifact medians: A 25.254 s → B 20.797 s (`−17.6%`). This sum is
 informative, not a production benchmark: there were only three runs on one
 machine.
 
-OCR work over the five unique declared artifacts fell from 21 pages under A's
-always-OCR policy to 9 pages under B (`−57.1%`). Under the seven case-specific
-runs, the count is 30 → 9 (`−70%`). B route/status correctness was 19/19; A
-matched 6/19 because its frozen policy intentionally OCRs text pages too.
+The predeclared OCR gate counts actual recognition pages: a page counts only
+when `OcrMacModel.get_ocr_rects` returns at least one non-zero region, and every
+such region enters `reader_RIL(...).recognize()` in Docling 2.126.0. On the five
+declared artifacts, actual recognition pages fell from 15→9 (`−40%`), so
+`B/A = 60%`. The gate required B to process at most half of A (`B ≤ 7.5`,
+`B/A ≤ 50%`); observed B=9, so it fails. The authoritative page lists and
+region counts are in `evals/results/ab-ocr-work-2026-09-14.json`.
+
+Diagnostic OCR-enabled stage visits were 21 → 9 (`−57.1%`). Stage visits are
+not equivalent to actual recognition work and do not override the failed gate.
+The seven case-weighted total was 22→9 (`−59.0909%`); this was not the
+predeclared gate and cannot rescue it. B route/status correctness remains 19/19.
+A had no per-page route state: its 6/19 value is a synthetic legacy-policy
+label, not actual OCR recognition, and must not be read as A intentionally
+recognizing every text page.
 
 Preservation checks:
 
@@ -133,10 +147,12 @@ superiority is claimed.
    semantically wrong page-5 citation in the multi-page answer. Manual support
    scoring exposes this gap.
 
-These are concrete targets and limits for C. A bounded agent can test query
-refinement and adjacent-page reading for items 1–2. It cannot recover chart
-numbers absent from extraction; C must refuse that case unless a separately
-approved VLM/backend is added.
+These remain historical targets and limits for the conditional B→C experiment.
+No C promotion, merge, or release is authorized while the A→B prerequisite is
+HOLD. A bounded agent can test query refinement and adjacent-page reading for
+items 1–2 only after that prerequisite is separately cleared. It cannot recover
+chart numbers absent from extraction; C must refuse that case unless a
+separately approved VLM/backend is added.
 
 ## Method correction disclosed
 

@@ -45,8 +45,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--mode",
         choices=("fixed", "agent"),
         default="fixed",
-        help="Режим вопросов: fixed — adaptive B (рекомендуемый, по умолчанию); "
-        "agent — экспериментальный bounded C",
+        help="Режим вопросов: fixed — кандидат B (HOLD; технический default только в этой ветке); "
+        "agent — экспериментальный кандидат C (HOLD; без скрытого fallback)",
     )
     parser.add_argument(
         "--ocr-pages",

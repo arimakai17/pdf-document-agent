@@ -32,7 +32,7 @@
     "text_only_B_median_not_slower_than_A": true,
     "each_mixed_B_over_A_median_at_most": 2.0,
     "each_artifact_median_seconds_at_most": 30.0,
-    "B_OCR_pages_at_most_half_A_on_unique_declared_artifacts": true,
+    "B_OCR_pages_at_most_half_A_on_unique_declared_artifacts": false,
     "citation_refusal_correctness_support_no_regression": true
   },
   "extraction": {
@@ -138,12 +138,38 @@
       "B": 20.796683
     },
     "unique_declared_artifact_ocr_pages": {
-      "A": 21,
+      "A": 15,
       "B": 9
     },
     "case_weighted_ocr_pages": {
-      "A": 30,
+      "A": 22,
       "B": 9
+    },
+    "ocr_measurement": {
+      "receipt": "evals/results/ab-ocr-work-2026-09-14.json",
+      "definition": "Actual recognition pages: count a page only when OcrMacModel.get_ocr_rects returns at least one non-zero region; every such region enters reader_RIL(...).recognize() in installed Docling.",
+      "declared_artifact_runs": {
+        "A": 15,
+        "B": 9,
+        "reduction_fraction": 0.4,
+        "B_over_A": 0.6,
+        "required_B_at_most_pages": 7.5,
+        "required_B_over_A_at_most": 0.5,
+        "gate_passed": false
+      },
+      "diagnostic_stage_visits": {
+        "A": 21,
+        "B": 9,
+        "reduction_fraction": 0.5714285714285714,
+        "note": "OCR-enabled stage visits are not equivalent to recognition work and do not override the gate."
+      },
+      "case_weighted_runs": {
+        "A": 22,
+        "B": 9,
+        "reduction_fraction": 0.5909090909090909,
+        "note": "Not the predeclared hard gate; cannot rescue it."
+      },
+      "route_correctness_note": "A had no per-page route state; its 6/19 value is a synthetic legacy-policy label, not actual OCR recognition. B route/status 19/19 remains valid."
     },
     "route_correctness": {
       "A": {
@@ -234,7 +260,7 @@
         "failures": 0
       },
       "ocr_pages_processed": {
-        "numerator": 30.0,
+        "numerator": 22.0,
         "denominator": 7,
         "skipped": 0,
         "failures": 0
@@ -693,10 +719,25 @@
     "Raw extracted text and PDFs remain local and are not included in this receipt."
   ],
   "decision": {
-    "verdict": "PROMOTE_B_EXTRACTION",
-    "allow_wave_4_agent_experiment": true,
+    "verdict": "HOLD_B_EXTRACTION",
+    "allow_wave_4_agent_experiment": false,
     "confidence": "moderate",
+    "prerequisite": {
+      "name": "A_to_B_corrected_OCR_hard_gate",
+      "requirement": "B must process at most half as many actual recognition pages as A over the declared artifacts.",
+      "threshold_B_pages": 7.5,
+      "threshold_B_over_A": 0.5,
+      "observed_A_actual_recognition_pages": 15,
+      "observed_B_actual_recognition_pages": 9,
+      "observed_B_over_A": 0.6,
+      "passed": false,
+      "limitation": "A→B is HOLD; the conditional B→C experiment has no merge or release authorization."
+    },
     "limitations": [
+      "corrected actual-recognition-page OCR gate fails: 15→9, B/A = 60%, versus required B≤7.5 and B/A≤50%",
+      "diagnostic stage visits 21→9 are not equivalent to recognition work and do not override the gate",
+      "case-weighted 22→9 was not the predeclared gate and cannot rescue it",
+      "A had no per-page route state; its 6/19 route value is a synthetic legacy-policy label, not actual OCR recognition",
       "fixed retrieval still misses adjacent page 7",
       "fixed retrieval refuses the mixed-page wording",
       "OcrMac does not recover chart numeric labels in the real mixed PDF",

@@ -2,9 +2,16 @@
 
 Date: 2026-09-14 (Asia/Almaty)
 
-## Decision: HOLD C / keep B default
+## Decision: HOLD C / A→B prerequisite HOLD
 
-**HOLD C.** B remains the default fixed retrieval mode. C remains a visible opt-in experiment; it is not promoted. The run shows measurable value—one mixed-text false refusal is fixed and both expected source recall and manual correctness/support improve—but the output interface is not stable enough for default use.
+**HOLD C.** This B→C run is historical and conditional. A→B is now
+`HOLD B EXTRACTION` after the corrected OCR gate failed, so no C promotion,
+merge, or release is authorized. B is the technical fixed default only inside
+this candidate branch because A is a frozen external baseline, not an in-app
+mode. C remains a visible opt-in experiment with HOLD status. The run shows
+measurable value—one mixed-text false refusal is fixed and both expected source
+recall and manual correctness/support improve—but the output interface is not
+stable enough for branch-default use.
 
 Candidate commit: `5bba39a6d8d66b6b5b846da1cca0c8a343a1f71d`.
 
@@ -12,14 +19,23 @@ Machine receipt: `evals/results/bc-2026-09-14.json`.
 
 ## Baseline
 
-- B is the default and C is the bounded read-only agent over the same saved B extraction artifacts.
+- B is the candidate fixed mode and C is the bounded read-only agent over the same saved B extraction artifacts.
+- Prerequisite status: A→B is HOLD; the corrected actual-recognition-page gate is 15→9, `B/A = 60%`, versus the required `B/A ≤ 50%` (`B ≤ 7.5`). The separate case-weighted diagnostic is 22→9 and is not the gate.
+- This receipt therefore records a conditional historical B→C vector, not authorization to merge or release B or C.
 - Model: `qwen3:14b`; digest is recorded in the receipt from the raw run.
 - The run used the same saved B artifacts for both candidates and alternating B/C order per question.
 - Candidate labels were blinded before grading. Grading was performed by the parent model, not an independent human; confidence is low-to-moderate. The acceptance corpus was already visible during development, so this is not pristine held-out evidence.
 
 ## Hard gates
 
-All declared hard gates pass: citation membership, no uncaught runtime error or timeout, per-run budgets, correct refusals, and no fabrication of chart values absent from extraction. C has 12/12 citation-membership validity, 3/3 correct refusals, no timeout, and no uncaught exception. The malformed-action and final-contract failures are reported as output-interface failures, not hidden.
+The B→C run's declared experiment checks pass for citation membership, no
+uncaught runtime error or timeout, per-run budgets, correct refusals, and no
+fabrication of chart values absent from extraction. C has 12/12
+citation-membership validity, 3/3 correct refusals, no timeout, and no uncaught
+exception. The A→B prerequisite does not pass: its corrected OCR gate is
+15→9 actual recognition pages, `B/A = 60%`, against `≤50%`. The malformed-action
+and final-contract failures are reported as output-interface failures, not
+hidden.
 
 ## Objective vector
 
@@ -45,7 +61,7 @@ C used only `outline`, `search`, and `read_page` against the saved extraction ar
 ## Observed evidence
 
 - C has 8 `ok`, 3 `invalid_action`, and 1 `answer_error` runs out of 12.
-- One malformed action and one final response-contract failure make the interface unreliable for default mode.
+- One malformed action and one final response-contract failure make the interface unreliable for branch-default use.
 - C fixes one mixed-text false refusal and improves the aggregate manual vector.
 - The multipage target still misses page 7; C does not recover the expected 6/7 coverage.
 - The repeated `outline → search → answer_ready` pattern occurs 5/12 times.
@@ -54,7 +70,7 @@ C used only `outline`, `search`, and `read_page` against the saved extraction ar
 
 ## Trade-offs
 
-C improves measured retrieval coverage and manual scores, but increases calls from 28 to 44, adds 23 tool steps, and has a slower median despite a lower one-run total. The bounded loop adds interface failure modes without solving the multipage miss. Keeping C opt-in preserves the measured experiment without weakening the stable B default.
+C improves measured retrieval coverage and manual scores, but increases calls from 28 to 44, adds 23 tool steps, and has a slower median despite a lower one-run total. The bounded loop adds interface failure modes without solving the multipage miss. Keeping C opt-in preserves the conditional experiment while B is only the technical branch default.
 
 ## Current limitations
 
@@ -66,4 +82,7 @@ C improves measured retrieval coverage and manual scores, but increases calls fr
 
 ## Deferred B2
 
-Defer any C promotion or expansion until a separately held-out, independently graded comparison demonstrates stable action/final-output contracts, recovers the multipage source set, and remains within the declared latency and budget boundaries. No architecture change is made in this wave.
+Defer any C expansion until A→B is separately cleared and a separately
+held-out, independently graded comparison demonstrates stable action/final-output
+contracts, recovers the multipage source set, and remains within the declared
+latency and budget boundaries. No architecture change is made in this wave.

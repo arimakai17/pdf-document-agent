@@ -1,5 +1,12 @@
 # PDF Atlas V2 — adaptive extraction, bounded agent, eval
 
+## Current status (2026-09-14)
+
+A→B is `HOLD B EXTRACTION`: corrected actual recognition pages are 15→9
+(`B/A = 60%`) against the predeclared `B ≤ 7.5` / `≤50%` gate. B is only the
+technical fixed default inside this candidate branch; C remains experimental
+and HOLD. No merge or release is authorized.
+
 ## Цель
 
 Доработать оценённый PDF Atlas по трём независимо измеряемым ступеням:

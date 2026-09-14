@@ -2,7 +2,12 @@
 
 Локальный учебный инструмент для вопросов по PDF: извлекает текст и структуру, находит фрагменты и отвечает через Ollama со ссылками на страницы.
 
-В V2 основной режим — **B: adaptive per-page extraction + fixed retrieval**. Для каждой страницы сначала проходит text-quality gate; OCR запускается только для страниц, которым он нужен. **C — bounded read-only agent поверх артефакта B**, видимый экспериментальный opt-in со статусом HOLD. C не включается автоматически и не имеет скрытого fallback в B.
+Статус A→B — **HOLD B EXTRACTION**: исправленное OCR-измерение не прошло
+предобъявленный hard gate. Внутри этой candidate branch B остаётся техническим
+fixed default только потому, что A — замороженный внешний baseline, а не режим
+приложения. **C — bounded read-only agent поверх артефакта B**, видимый
+экспериментальный opt-in со статусом HOLD; merge/release для B и C не разрешены.
+C не включается автоматически и не имеет скрытого fallback в B.
 
 Проект предназначен для локальной демонстрации и проверки исходного кода. Публичный сервер и production-развёртывание не входят в scope.
 
@@ -81,7 +86,8 @@ cached ExtractedDocument
             │
        ┌────┴──────────────────────────────┐
        ▼                                   ▼
-fixed B (default)                    bounded C (opt-in/HOLD)
+fixed B (candidate/HOLD;             bounded C (opt-in/HOLD)
+       technical default in branch)
 chunking → lexical retrieval          outline / deterministic search /
 → answer + citation validation        read_page → bounded evidence
        │                                   │
@@ -94,7 +100,9 @@ chunking → lexical retrieval          outline / deterministic search /
 
 ### Режимы ответа
 
-`fixed` — рекомендуемый режим по умолчанию: B extraction и стабильный fixed retrieval/answering.
+`fixed` — режим-кандидат B со статусом HOLD; в этой candidate branch он
+остаётся техническим default для B extraction и fixed retrieval/answering.
+Это не является одобрением merge/release.
 
 `agent` — экспериментальный C. Planner может выбирать только read-only tools `outline`, детерминированный `search` и `read_page`; `outline` не даёт citation authority. Host проверяет typed JSON actions, собирает единый bounded final evidence packet и передаёт его прежнему answer/citation слою.
 
@@ -130,7 +138,7 @@ ollama serve
 
 После старта открой URL, который напечатает Streamlit (обычно `http://localhost:8501`). Загрузи PDF, дождись extraction и задай вопрос по документу.
 
-В настройках UI можно сменить модель, выбрать `fixed` или `agent`, задать страницы ручного OCR, ограничить историю и очистить локальный кэш. Для C UI явно показывает экспериментальный статус; автоматического fallback нет.
+В настройках UI можно сменить модель, выбрать `fixed` или `agent`, задать страницы ручного OCR, ограничить историю и очистить локальный кэш. UI явно показывает B candidate/HOLD и C experimental/HOLD; автоматического fallback нет.
 
 ## CLI
 
@@ -174,7 +182,7 @@ uv run pdf-document-agent document.pdf \
 ### Режимы и ручной OCR
 
 ```bash
-# B: default/recommended
+# B: candidate/HOLD; technical default only in this candidate branch
 uv run pdf-document-agent document.pdf \
   --ask "Что описано в документе?" \
   --mode fixed
@@ -190,7 +198,10 @@ uv run pdf-document-agent document.pdf \
   --ocr-pages "1, 3-5"
 ```
 
-`--mode` принимает только `fixed` и `agent`; default — `fixed`. `--ocr-pages` по умолчанию пустой, принимает 1-based номера и возрастающие диапазоны через запятую. `--ask` и `--interactive` взаимоисключающие.
+`--mode` принимает только `fixed` и `agent`; parser default — `fixed`, но это
+только технический default candidate branch со статусом HOLD. `--ocr-pages` по
+умолчанию пустой, принимает 1-based номера и возрастающие диапазоны через
+запятую. `--ask` и `--interactive` взаимоисключающие.
 
 ## Локальные данные и границы безопасности
 
@@ -204,10 +215,17 @@ uv run pdf-document-agent document.pdf \
 
 ## Оценка
 
-B promoted: adaptive extraction стал default для fixed retrieval. C held: bounded agent остаётся видимым opt-in экспериментом. Отчёты — сравнительная регрессионная проверка на локальном запуске, а не production benchmark; они не заявляют pristine held-out evidence или превосходство по скорости.
+A→B HOLD: corrected actual recognition pages are 15→9 (`−40%`, `B/A = 60%`),
+при predeclared gate `B ≤ 7.5` / `≤50%`. Diagnostic stage visits were 21→9;
+case-weighted runs were 22→9, but neither overrides the gate. B is only the
+technical fixed default inside this candidate branch; C is experimental/HOLD.
+Отчёты — сравнительная регрессионная проверка на локальном запуске, а не
+production benchmark; они не заявляют pristine held-out evidence или
+превосходство по скорости.
 
 - [PLAN_V2.md](PLAN_V2.md) — контракт и границы V2;
 - [A → B report](evals/ab-report.md) и [машинный receipt](evals/results/ab-2026-09-14.json);
+- [corrected OCR work receipt](evals/results/ab-ocr-work-2026-09-14.json);
 - [B → C report](evals/bc-report.md) и [машинный receipt](evals/results/bc-2026-09-14.json);
 - [контракт evaluation](evals/README.md) и [manifest](evals/manifest.json).
 
@@ -263,6 +281,7 @@ evals/
 ├── bc-report.md
 └── results/
     ├── ab-2026-09-14.json
+    ├── ab-ocr-work-2026-09-14.json
     └── bc-2026-09-14.json
 ```
 
