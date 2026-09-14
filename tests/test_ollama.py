@@ -1,4 +1,6 @@
 import json
+import socket
+import socketserver
 import threading
 import time
 from urllib.error import URLError
@@ -14,7 +16,7 @@ class FakeResponse:
         self.status = 200
         self.closed = False
 
-    def read(self) -> bytes:
+    def read(self, amount: int | None = None) -> bytes:
         return self._body
 
     def close(self) -> None:
@@ -51,20 +53,90 @@ class BlockingResponse:
         self.closed = False
         self.aborted = threading.Event()
 
-    def read(self) -> bytes:
+    def read(self, amount: int | None = None) -> bytes:
         if not self.aborted.wait(1.0):
             raise AssertionError("test transport was not aborted")
         raise OSError("transport closed")
 
     def close(self) -> None:
         self.closed = True
-        self.aborted.set()
+
+
+class BlockingSocket:
+    def __init__(self, response: BlockingResponse) -> None:
+        self.response = response
+        self.shutdown_called = False
+
+    def shutdown(self, how: int) -> None:
+        assert how == socket.SHUT_RDWR
+        self.shutdown_called = True
+        self.response.aborted.set()
 
 
 class BlockingConnection(FakeConnection):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.response = BlockingResponse()
+        self.sock = BlockingSocket(self.response)
+
+
+def _start_trickle_server(
+    *,
+    trickle_headers: bool,
+) -> tuple[socketserver.ThreadingTCPServer, threading.Thread, threading.Event]:
+    done = threading.Event()
+    response_headers = (
+        b"HTTP/1.1 200 OK\r\n"
+        b"Content-Type: application/json\r\n"
+        b"Content-Length: 39\r\n"
+        b"Connection: close\r\n"
+        b"\r\n"
+    )
+    response_body = b'{"message":{"content":"slow response"}}'
+
+    class TrickleHandler(socketserver.BaseRequestHandler):
+        def handle(self) -> None:
+            try:
+                request = b""
+                while b"\r\n\r\n" not in request:
+                    chunk = self.request.recv(4096)
+                    if not chunk:
+                        return
+                    request += chunk
+                if trickle_headers:
+                    for byte in response_headers:
+                        self.request.sendall(bytes((byte,)))
+                        time.sleep(0.05)
+                    self.request.sendall(response_body)
+                else:
+                    self.request.sendall(response_headers)
+                    for byte in response_body:
+                        self.request.sendall(bytes((byte,)))
+                        time.sleep(0.05)
+            except OSError:
+                pass
+            finally:
+                done.set()
+
+    server = socketserver.ThreadingTCPServer(("127.0.0.1", 0), TrickleHandler)
+    server.daemon_threads = True
+    server_thread = threading.Thread(target=server.serve_forever)
+    server_thread.start()
+    return server, server_thread, done
+
+
+def _track_watchdog_threads(monkeypatch: pytest.MonkeyPatch) -> list[threading.Thread]:
+    real_thread = threading.Thread
+    watchdogs: list[threading.Thread] = []
+
+    class TrackingThread(real_thread):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            if self.name == "ollama-deadline-watchdog":
+                watchdogs.append(self)
+
+    monkeypatch.setattr(ollama, "Thread", TrackingThread)
+    return watchdogs
 
 
 def test_chat_with_ollama_sends_non_streaming_grounded_request(
@@ -143,6 +215,24 @@ def test_chat_with_ollama_rejects_invalid_response(monkeypatch: pytest.MonkeyPat
         ollama.chat_with_ollama("system", "user")
 
 
+def test_chat_with_ollama_rejects_oversized_response(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class OversizedResponse(FakeResponse):
+        def read(self, amount: int | None = None) -> bytes:
+            return b"x" * (ollama._MAX_RESPONSE_BYTES + 1)
+
+    class OversizedConnection(FakeConnection):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.response = OversizedResponse({})
+
+    monkeypatch.setattr(ollama, "HTTPConnection", OversizedConnection)
+
+    with pytest.raises(ollama.OllamaError, match="слишком большой"):
+        ollama.chat_with_ollama("system", "user")
+
+
 def test_chat_with_ollama_aborts_slow_body_at_total_deadline(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -159,6 +249,38 @@ def test_chat_with_ollama_aborts_slow_body_at_total_deadline(
     assert connection.closed is True
     assert connection.response.closed is True
     assert connection.response.aborted.is_set()
+    assert connection.sock.shutdown_called is True
+
+
+@pytest.mark.parametrize("trickle_headers", [True, False])
+def test_chat_with_ollama_aborts_real_trickle_exchange_at_total_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+    trickle_headers: bool,
+) -> None:
+    server, server_thread, handler_done = _start_trickle_server(
+        trickle_headers=trickle_headers,
+    )
+    watchdogs = _track_watchdog_threads(monkeypatch)
+    try:
+        started = time.monotonic()
+        with pytest.raises(ollama.OllamaTimeoutError):
+            ollama.chat_with_ollama(
+                "system",
+                "user",
+                base_url=f"http://127.0.0.1:{server.server_address[1]}",
+                timeout=0.2,
+            )
+        elapsed = time.monotonic() - started
+    finally:
+        server.shutdown()
+        server.server_close()
+        server_thread.join(timeout=1.0)
+
+    assert elapsed < 0.8
+    assert handler_done.wait(1.0)
+    assert server_thread.is_alive() is False
+    assert len(watchdogs) == 1
+    assert watchdogs[0].is_alive() is False
 
 
 def test_chat_with_ollama_cleans_watchdog_and_closes_response(

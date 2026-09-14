@@ -1,7 +1,8 @@
 import http.client
 import json
+import socket
 from json import JSONDecodeError
-from threading import Event, Lock, Thread
+from threading import Event, Thread
 from time import monotonic
 from urllib.error import URLError
 from urllib.parse import urlsplit
@@ -11,6 +12,7 @@ DEFAULT_MODEL = "qwen3:14b"
 DEFAULT_BASE_URL = "http://127.0.0.1:11434"
 HTTPConnection = http.client.HTTPConnection
 HTTPSConnection = http.client.HTTPSConnection
+_MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 
 
 class OllamaError(RuntimeError):
@@ -25,24 +27,19 @@ class _ExchangeWatchdog:
     def __init__(self, connection: http.client.HTTPConnection, deadline: float) -> None:
         self._connection = connection
         self._deadline = deadline
-        self._response = None
-        self._lock = Lock()
         self._stop = Event()
-        self.expired = False
+        self._expired = Event()
         self._thread = Thread(
             target=self._run,
             name="ollama-deadline-watchdog",
         )
 
+    @property
+    def expired(self) -> bool:
+        return self._expired.is_set()
+
     def start(self) -> None:
         self._thread.start()
-
-    def set_response(self, response) -> None:
-        with self._lock:
-            self._response = response
-            expired = self.expired
-        if expired:
-            response.close()
 
     def stop(self) -> None:
         self._stop.set()
@@ -51,12 +48,20 @@ class _ExchangeWatchdog:
     def _run(self) -> None:
         if self._stop.wait(max(0.0, self._deadline - monotonic())):
             return
-        self.expired = True
-        with self._lock:
-            response = self._response
-        if response is not None:
-            response.close()
-        self._connection.close()
+        self._expired.set()
+        self._abort_connection()
+
+    def _abort_connection(self) -> None:
+        sock = getattr(self._connection, "sock", None)
+        if sock is not None:
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+        try:
+            self._connection.close()
+        except OSError:
+            pass
 
 
 def chat_with_ollama(
@@ -129,13 +134,26 @@ def chat_with_ollama(
             body=request_body,
             headers={"Content-Type": "application/json"},
         )
+        if watchdog.expired or monotonic() >= deadline:
+            raise OllamaTimeoutError("Обмен с Ollama превысил отведённый срок.")
         response = connection.getresponse()
-        watchdog.set_response(response)
         if watchdog.expired or monotonic() >= deadline:
             raise OllamaTimeoutError("Обмен с Ollama превысил отведённый срок.")
         if response.status >= 400:
             raise OllamaError(f"Ollama вернул HTTP-ошибку {response.status}.")
-        response_body = response.read()
+        response_body = response.read(_MAX_RESPONSE_BYTES + 1)
+        if watchdog.expired or monotonic() >= deadline:
+            raise OllamaTimeoutError("Обмен с Ollama превысил отведённый срок.")
+        if len(response_body) > _MAX_RESPONSE_BYTES:
+            raise OllamaError("Ollama вернул слишком большой ответ.")
+        try:
+            body = json.loads(response_body)
+        except (JSONDecodeError, UnicodeDecodeError, TypeError) as error:
+            if watchdog.expired or monotonic() >= deadline:
+                raise OllamaTimeoutError(
+                    "Обмен с Ollama превысил отведённый срок."
+                ) from error
+            raise OllamaError("Ollama вернул некорректный JSON-ответ.") from error
         if watchdog.expired or monotonic() >= deadline:
             raise OllamaTimeoutError("Обмен с Ollama превысил отведённый срок.")
     except OllamaError:
@@ -149,15 +167,10 @@ def chat_with_ollama(
             "Не удалось подключиться к Ollama. Запусти приложение Ollama."
         ) from error
     finally:
+        watchdog.stop()
         if response is not None:
             response.close()
-        watchdog.stop()
         connection.close()
-
-    try:
-        body = json.loads(response_body)
-    except (JSONDecodeError, UnicodeDecodeError) as error:
-        raise OllamaError("Ollama вернул некорректный JSON-ответ.") from error
 
     try:
         content = body["message"]["content"]
