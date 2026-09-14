@@ -47,6 +47,37 @@ def test_chat_with_ollama_sends_non_streaming_grounded_request(
     assert captured["payload"]["model"] == "qwen3:14b"
 
 
+def test_chat_with_ollama_accepts_bounded_generation_options(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict = {}
+
+    def fake_urlopen(request, *, timeout: float):
+        captured["payload"] = json.loads(request.data)
+        return FakeResponse({"message": {"content": "ok"}})
+
+    monkeypatch.setattr(ollama, "urlopen", fake_urlopen)
+
+    ollama.chat_with_ollama(
+        "system",
+        "user",
+        num_predict=17,
+        num_ctx=321,
+    )
+
+    assert captured["payload"]["options"]["num_predict"] == 17
+    assert captured["payload"]["options"]["num_ctx"] == 321
+
+
+@pytest.mark.parametrize("field", ["num_predict", "num_ctx"])
+def test_chat_with_ollama_rejects_non_positive_or_bool_budget(
+    field: str,
+) -> None:
+    kwargs = {field: True}
+    with pytest.raises(ValueError):
+        ollama.chat_with_ollama("system", "user", **kwargs)
+
+
 def test_chat_with_ollama_maps_connection_error(monkeypatch: pytest.MonkeyPatch) -> None:
     def fail_urlopen(_request, *, timeout: float):
         raise URLError("connection refused")

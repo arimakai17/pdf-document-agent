@@ -19,8 +19,14 @@ def chat_with_ollama(
     model: str = DEFAULT_MODEL,
     base_url: str = DEFAULT_BASE_URL,
     timeout: float = 180.0,
+    num_predict: int = 600,
+    num_ctx: int = 8_192,
 ) -> str:
     """Получить один нестриминговый ответ от локального Ollama API."""
+    if type(num_predict) is not int or num_predict <= 0:
+        raise ValueError("num_predict должен быть положительным int.")
+    if type(num_ctx) is not int or num_ctx <= 0:
+        raise ValueError("num_ctx должен быть положительным int.")
     payload = {
         "model": model,
         "messages": [
@@ -32,8 +38,8 @@ def chat_with_ollama(
         "options": {
             "temperature": 0.1,
             "seed": 42,
-            "num_ctx": 8_192,
-            "num_predict": 600,
+            "num_ctx": num_ctx,
+            "num_predict": num_predict,
         },
     }
     request = Request(

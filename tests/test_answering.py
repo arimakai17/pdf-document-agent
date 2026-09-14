@@ -8,6 +8,7 @@ from pdf_document_agent.answering import (
     AnswerGenerationError,
     _LANGUAGE_SYSTEM_PROMPT,
     _REWRITE_SYSTEM_PROMPT,
+    answer_from_results,
     _detect_chapter_number,
     _rewrite_search_query,
     answer_question,
@@ -52,6 +53,29 @@ def test_answer_question_passes_retrieved_page_to_model() -> None:
     assert answer.source_pages == (2,)
     assert "[Страница 2]" in captured["user"]
     assert "только" in captured["system"].lower()
+
+
+def test_answer_from_results_uses_host_selected_context_without_retrieval() -> None:
+    result = search_chunks(
+        "Кто создал Python?",
+        [TextChunk(index=0, page_number=2, text="Python создал Гвидо ван Россум.")],
+        top_k=1,
+    )[0]
+    calls: list[tuple[str, str]] = []
+
+    def fake_chat(system: str, user: str) -> str:
+        calls.append((system, user))
+        return "Python создал Гвидо ван Россум [стр. 2]."
+
+    answer = answer_from_results(
+        "Кто создал Python?",
+        [result],
+        chat=fake_chat,
+    )
+
+    assert answer.source_pages == (2,)
+    assert len(calls) == 1
+    assert "[Страница 2]" in calls[0][1]
 
 
 def test_answer_question_does_not_call_model_without_relevant_context() -> None:
@@ -932,5 +956,4 @@ def test_citation_range_anomalously_large_rejected() -> None:
             ),
             top_k=1,
         )
-
 

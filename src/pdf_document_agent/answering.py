@@ -176,7 +176,6 @@ def answer_question(
     """
     if answer_language not in (None, "Russian", "English"):
         raise ValueError("Поддерживаются только Russian и English.")
-    insufficient_answer = _insufficient_answer(answer_language)
 
     results: list[SearchResult] = []
     is_structural = False
@@ -212,9 +211,44 @@ def answer_question(
         if not results:
             results = search_chunks(question, chunks, top_k=top_k)
         if not results:
-            return GroundedAnswer(text=insufficient_answer, source_pages=())
+            return answer_from_results(
+                question,
+                results,
+                chat=chat,
+                previous_questions=previous_questions,
+                answer_language=answer_language,
+            )
         if previous_questions:
             results = _add_adjacent_context(results, chunks, limit=top_k)
+
+    return answer_from_results(
+        question,
+        results,
+        chat=chat,
+        previous_questions=previous_questions,
+        answer_language=answer_language,
+    )
+
+
+def answer_from_results(
+    question: str,
+    results: Sequence[SearchResult],
+    *,
+    chat: Callable[[str, str], str],
+    previous_questions: Sequence[str] = (),
+    answer_language: AnswerLanguage | None = None,
+) -> GroundedAnswer:
+    """Сгенерировать grounded answer из уже отобранных результатов.
+
+    Retrieval и rewrite здесь намеренно не выполняются: вызывающий слой владеет
+    составом контекста и тем самым citation allowlist.
+    """
+    if answer_language not in (None, "Russian", "English"):
+        raise ValueError("Поддерживаются только Russian и English.")
+    results = list(results)
+    insufficient_answer = _insufficient_answer(answer_language)
+    if not results:
+        return GroundedAnswer(text=insufficient_answer, source_pages=())
 
     user_prompt = _build_user_prompt(
         question,
