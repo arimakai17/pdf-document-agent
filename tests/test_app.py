@@ -6,6 +6,7 @@ from streamlit.testing.v1 import AppTest
 
 from pdf_document_agent import answering
 from pdf_document_agent import cache
+from pdf_document_agent.agent import AgentTraceEvent
 from pdf_document_agent.extractor import (
     ExtractedDocument,
     ExtractedPage,
@@ -460,3 +461,255 @@ def test_mascot_preserves_app_startup() -> None:
     assert app.title[0].value == "PDF Atlas"
     assert len(app.get("file_uploader")) == 1
     assert "pdf-atlas-mascot" in _all_markup(app)
+
+
+# --- Wave 6B answer mode and extraction instrumentation --------------------
+
+
+def _seed_document(file_bytes: bytes, document: ExtractedDocument, chunks) -> None:
+    cache.put(
+        file_bytes,
+        document,
+        chunks,
+        config_fingerprint=document.config_fingerprint,
+    )
+
+
+def test_empty_state_exposes_fixed_default_and_localized_ocr_control() -> None:
+    app = AppTest.from_file(str(APP_PATH)).run(timeout=30)
+
+    assert not app.exception
+    assert app.radio[0].value == "fixed"
+    assert app.radio[0].options == [
+        "Фиксированный · адаптивный B (рекомендуемый)",
+        "Ограниченный агент · экспериментальный C",
+    ]
+    assert next(item for item in app.text_input if item.label == "Страницы для ручного OCR")
+
+    app.button_group[0].set_value("EN").run(timeout=30)
+
+    assert app.radio[0].value == "fixed"
+    assert app.radio[0].options == [
+        "Fixed · adaptive B (recommended)",
+        "Bounded-agent · experimental C",
+    ]
+    assert next(item for item in app.text_input if item.label == "Pages for manual OCR")
+
+
+def test_bounded_chat_maps_agent_budget_and_forwards_model_timeout(monkeypatch) -> None:
+    calls = []
+
+    def fake_chat(system_prompt, user_prompt, **kwargs):
+        calls.append((system_prompt, user_prompt, kwargs))
+        return "ok"
+
+    monkeypatch.setattr(app_module, "chat_with_ollama", fake_chat)
+
+    assert app_module._bounded_chat(
+        "system", "user", model="qwen", max_output_tokens=37, timeout=4.5
+    ) == "ok"
+    assert calls == [
+        (
+            "system",
+            "user",
+            {
+                "model": "qwen",
+                "timeout": 4.5,
+                "num_predict": 37,
+                "num_ctx": 8192,
+            },
+        )
+    ]
+
+
+def test_extraction_summary_keeps_routes_status_diagnostics_and_warnings_visible(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setenv("PDF_DOCUMENT_AGENT_CACHE_DIR", str(tmp_path))
+    file_bytes = b"%PDF-1.4 summary"
+    document = ExtractedDocument(
+        source_name="summary.pdf",
+        markdown="usable text",
+        page_count=3,
+        pages=(
+            ExtractedPage(
+                number=1,
+                markdown="usable text",
+                route="docling_text",
+                status="ok",
+                reason="meaningful text gate passed",
+            ),
+            ExtractedPage(
+                number=2,
+                markdown="",
+                route="docling_ocr",
+                status="failed",
+                reason="selective OCR failed",
+                diagnostic="OCR unavailable",
+            ),
+            ExtractedPage(
+                number=3,
+                markdown="",
+                route="docling_text",
+                status="empty",
+                reason="meaningful text gate failed; no significant raster",
+            ),
+        ),
+        warnings=("Page 2: OCR unavailable",),
+    )
+    region = TextRegion(page_number=1, text="usable text", box=(0, 0, 1, 1))
+    chunks = [
+        TextChunk(
+            index=0,
+            page_number=1,
+            text="usable text",
+            boxes=(region.box,),
+            regions=(region,),
+        )
+    ]
+    _seed_document(file_bytes, document, chunks)
+
+    app = AppTest.from_file(str(APP_PATH)).run(timeout=30)
+    app.get("file_uploader")[0].set_value(
+        ("summary.pdf", file_bytes, "application/pdf")
+    )
+    app.run(timeout=30)
+
+    assert not app.exception
+    assert any("Извлечение частичное" in item.value for item in app.warning)
+    details = "\n".join(item.value for item in app.caption)
+    assert "docling_text" in details
+    assert "docling_ocr" in details
+    assert "OCR unavailable" in details
+    assert "Page 2: OCR unavailable" in details
+
+
+def test_agent_dispatch_stores_compact_trace_and_does_not_call_fixed(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setenv("PDF_DOCUMENT_AGENT_CACHE_DIR", str(tmp_path))
+    file_bytes = b"%PDF-1.4 agent"
+    _seed_cached_pdf(file_bytes)
+    fixed_calls = []
+    agent_calls = []
+
+    def fake_fixed(*args, **kwargs):
+        fixed_calls.append((args, kwargs))
+        raise AssertionError("fixed mode must not run for an agent question")
+
+    def fake_agent(question, document, chunks, **kwargs):
+        agent_calls.append((question, document, chunks, kwargs))
+        return type(
+            "FakeAgentRun",
+            (),
+            {
+                "answer": type("Answer", (), {"text": "agent answer", "sources": ()})(),
+                "status": "ok",
+                "tool_calls": 1,
+                "llm_calls": 2,
+                "trace": type(
+                    "Trace",
+                    (),
+                    {
+                        "events": (
+                            AgentTraceEvent(
+                                "search", "ok", pages=(1,), truncated=True
+                            ),
+                        )
+                    },
+                )(),
+            },
+        )()
+
+    monkeypatch.setattr(answering, "answer_question", fake_fixed)
+    monkeypatch.setattr("pdf_document_agent.agent.run_agent", fake_agent)
+    app = AppTest.from_file(str(APP_PATH)).run(timeout=30)
+    app.get("file_uploader")[0].set_value(
+        ("agent.pdf", file_bytes, "application/pdf")
+    )
+    app.run(timeout=30)
+    app.radio[0].set_value("agent").run(timeout=30)
+    next(item for item in app.text_input if item.label == "Вопрос по документу").set_value(
+        "Что известно?"
+    )
+    next(button for button in app.button if button.label == "Получить ответ").click().run(
+        timeout=30
+    )
+
+    assert not app.exception
+    assert not fixed_calls
+    assert len(agent_calls) == 1
+    metadata = app.session_state["messages"][-1]["metadata"]
+    assert metadata == {
+        "mode": "agent",
+        "status": "ok",
+        "tool_calls": 1,
+        "llm_calls": 2,
+        "trace": (
+            {
+                "action": "search",
+                "status": "ok",
+                "pages": (1,),
+                "truncated": True,
+            },
+        ),
+    }
+    rendered = "\n".join(item.value for item in app.caption)
+    assert "search" in rendered
+    assert "truncated: yes" in rendered
+
+
+def test_agent_non_ok_renders_canonical_answer_without_fixed_fallback(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setenv("PDF_DOCUMENT_AGENT_CACHE_DIR", str(tmp_path))
+    file_bytes = b"%PDF-1.4 agent failure"
+    _seed_cached_pdf(file_bytes)
+    fixed_calls = []
+
+    def fake_fixed(*args, **kwargs):
+        fixed_calls.append(True)
+        raise AssertionError("fixed fallback is forbidden")
+
+    def fake_agent(*args, **kwargs):
+        return type(
+            "FakeAgentRun",
+            (),
+            {
+                "answer": type(
+                    "Answer",
+                    (),
+                    {"text": "The document does not contain enough information to answer.", "sources": ()},
+                )(),
+                "status": "invalid_action",
+                "tool_calls": 1,
+                "llm_calls": 1,
+                "trace": type(
+                    "Trace",
+                    (),
+                    {"events": (AgentTraceEvent("invalid_action", "invalid_action"),)},
+                )(),
+            },
+        )()
+
+    monkeypatch.setattr(answering, "answer_question", fake_fixed)
+    monkeypatch.setattr("pdf_document_agent.agent.run_agent", fake_agent)
+    app = AppTest.from_file(str(APP_PATH)).run(timeout=30)
+    app.get("file_uploader")[0].set_value(
+        ("agent-failure.pdf", file_bytes, "application/pdf")
+    )
+    app.run(timeout=30)
+    app.radio[0].set_value("agent").run(timeout=30)
+    next(item for item in app.text_input if item.label == "Вопрос по документу").set_value(
+        "What is known?"
+    )
+    next(button for button in app.button if button.label == "Получить ответ").click().run(
+        timeout=30
+    )
+
+    assert not app.exception
+    assert fixed_calls == []
+    assert app.session_state["messages"][-1]["content"].startswith(
+        "The document does not contain enough information"
+    )
+    assert any("invalid_action" in item.value for item in app.warning)

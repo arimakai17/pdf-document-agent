@@ -7,6 +7,7 @@ from pathlib import Path
 import streamlit as st
 
 from pdf_document_agent import cache
+from pdf_document_agent.agent import AgentRun, run_agent
 from pdf_document_agent.answering import AnswerGenerationError, answer_question
 from pdf_document_agent.extractor import (
     DEFAULT_EXTRACTION_CONFIG,
@@ -16,6 +17,7 @@ from pdf_document_agent.extractor import (
     PdfExtractionError,
     config_fingerprint,
     extract_pdf,
+    parse_ocr_pages,
 )
 from pdf_document_agent.localization import (
     ANSWER_LANGUAGE,
@@ -30,6 +32,7 @@ from pdf_document_agent.viewer import ViewerError, render_page
 
 MAX_FILE_BYTES = 50 * 1024 * 1024
 HISTORY_LIMIT_OPTIONS = (5, 10, 25, 50)
+ANSWER_MODES = ("fixed", "agent")
 
 _CAT_IDLE_SVG = """
 <svg class="mascot-cat mascot-cat-idle" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
@@ -127,13 +130,169 @@ def prepare_pdf(
         document = extract_pdf(temporary_pdf, config=config)
 
     chunks = chunk_document(document)
-    if not chunks:
-        raise PdfExtractionError("В PDF нет текста, пригодного для поиска.")
     try:
         cache.put(file_bytes, document, chunks, config_fingerprint=fingerprint)
     except OSError:
         pass
     return document, chunks
+
+
+def _bounded_chat(
+    system_prompt: str,
+    user_prompt: str,
+    *,
+    model: str,
+    max_output_tokens: int,
+    timeout: float,
+) -> str:
+    """Adapt the bounded agent's call contract to the local Ollama client."""
+    return chat_with_ollama(
+        system_prompt,
+        user_prompt,
+        model=model,
+        timeout=timeout,
+        num_predict=max_output_tokens,
+        num_ctx=8192,
+    )
+
+
+def _mode_label(locale: Locale, mode: str) -> str:
+    return text(
+        locale,
+        "answer_mode_agent" if mode == "agent" else "answer_mode_fixed",
+    )
+
+
+def _agent_status_label(locale: Locale, status: str) -> str:
+    known_statuses = {
+        "ok",
+        "invalid_action",
+        "tool_error",
+        "planner_error",
+        "answer_error",
+        "budget_exhausted",
+    }
+    if status not in known_statuses:
+        return status
+    return text(locale, f"agent_status_{status}") + f" ({status})"
+
+
+def _answer_metadata(message: dict) -> dict:
+    """Return only the bounded, renderable metadata kept with an answer."""
+    return message.get(
+        "metadata",
+        {
+            "mode": "fixed",
+            "status": "ok",
+            "tool_calls": None,
+            "llm_calls": None,
+            "trace": (),
+        },
+    )
+
+
+def _agent_metadata(run: AgentRun) -> dict:
+    return {
+        "mode": "agent",
+        "status": run.status,
+        "tool_calls": run.tool_calls,
+        "llm_calls": run.llm_calls,
+        "trace": tuple(
+            {
+                "action": event.action,
+                "status": event.status,
+                "pages": tuple(event.pages),
+                "truncated": event.truncated,
+            }
+            for event in run.trace.events
+        ),
+    }
+
+
+def _render_answer_metadata(locale: Locale, message: dict) -> None:
+    metadata = _answer_metadata(message)
+    mode = metadata.get("mode", "fixed")
+    status = metadata.get("status", "ok")
+    status_label = (
+        _agent_status_label(locale, status) if mode == "agent" else status
+    )
+    st.caption(
+        text(
+            locale,
+            "answer_metadata",
+            mode=_mode_label(locale, mode),
+            status=status_label,
+            llm_calls=(
+                metadata.get("llm_calls")
+                if mode == "agent"
+                else "—"
+            ),
+            tool_calls=(
+                metadata.get("tool_calls")
+                if mode == "agent"
+                else "—"
+            ),
+        )
+    )
+    if mode != "agent":
+        return
+    if status != "ok":
+        st.warning(text(locale, "agent_non_ok", status=status_label))
+    trace = metadata.get("trace", ())
+    if trace:
+        lines = [text(locale, "agent_trace")]
+        for event in trace:
+            pages = ", ".join(map(str, event.get("pages", ()))) or "-"
+            lines.append(
+                text(
+                    locale,
+                    "agent_trace_event",
+                    action=event.get("action", "-"),
+                    status=_agent_status_label(
+                        locale, event.get("status", "-")
+                    ),
+                    pages=pages,
+                    truncated="yes" if event.get("truncated") else "no",
+                )
+            )
+        st.caption("\n".join(lines))
+
+
+def _render_extraction_summary(locale: Locale, document: ExtractedDocument) -> None:
+    statuses = {page.status for page in document.pages}
+    if not document.pages or statuses == {"empty"}:
+        st.warning(text(locale, "extraction_empty"))
+    elif "ok" in statuses:
+        st.warning(text(locale, "extraction_partial"))
+    else:
+        st.error(text(locale, "extraction_failed"))
+
+    with st.expander(text(locale, "extraction_details"), expanded=True):
+        lines = []
+        for page in document.pages:
+            line = text(
+                locale,
+                "extraction_page",
+                page=page.number,
+                route=page.route,
+                status=page.status,
+                reason=page.reason,
+            )
+            if page.diagnostic:
+                line += " · " + text(
+                    locale, "extraction_diagnostic", diagnostic=page.diagnostic
+                )
+            lines.append(line)
+        if lines:
+            st.caption("\n".join(lines))
+        if document.warnings:
+            st.caption(
+                text(
+                    locale,
+                    "document_warnings",
+                    warnings="; ".join(document.warnings),
+                )
+            )
 
 
 def _select_source(
@@ -234,6 +393,21 @@ def run_app() -> None:
             value=DEFAULT_MODEL,
             key="ollama_model",
         )
+        answer_mode = st.radio(
+            text(locale, "answer_mode"),
+            options=ANSWER_MODES,
+            format_func=lambda mode: _mode_label(locale, mode),
+            index=0,
+            key="answer_mode",
+        )
+        if answer_mode == "agent":
+            st.caption(text(locale, "agent_experimental"))
+        ocr_pages_input = st.text_input(
+            text(locale, "ocr_pages"),
+            value="",
+            help=text(locale, "ocr_pages_help"),
+            key="ocr_pages_input",
+        )
         history_limit = st.selectbox(
             text(locale, "history_limit"),
             options=HISTORY_LIMIT_OPTIONS,
@@ -279,15 +453,39 @@ def run_app() -> None:
 
     file_bytes = uploaded_file.getvalue()
     file_id = hashlib.sha256(file_bytes).hexdigest()
-    if st.session_state.get("file_id") != file_id:
+    try:
+        ocr_pages = parse_ocr_pages(ocr_pages_input)
+    except ValueError:
+        st.error(text(locale, "ocr_pages_invalid"))
+        return
+    config = ExtractionConfig(ocr_pages=ocr_pages)
+    artifact_identity = (file_id, config_fingerprint(config))
+    if st.session_state.get("artifact_identity") != artifact_identity:
         try:
             with st.spinner(text(locale, "processing")):
-                document, chunks = prepare_pdf(file_bytes, uploaded_file.name)
-        except (FileNotFoundError, ValueError, PdfExtractionError):
+                document, chunks = prepare_pdf(
+                    file_bytes, uploaded_file.name, config=config
+                )
+        except ValueError as error:
+            if config.ocr_pages and "ocr_pages" in str(error).casefold():
+                st.error(
+                    text(
+                        locale,
+                        "ocr_pages_out_of_range",
+                        pages=", ".join(map(str, config.ocr_pages)),
+                    )
+                )
+            else:
+                st.error(text(locale, "pdf_error"))
+            return
+        except (FileNotFoundError, PdfExtractionError):
             st.error(text(locale, "pdf_error"))
             return
         st.session_state.update(
             file_id=file_id,
+            artifact_identity=artifact_identity,
+            extraction_config=config,
+            extraction_config_fingerprint=config.fingerprint,
             file_bytes=file_bytes,
             document=document,
             chunks=chunks,
@@ -301,15 +499,17 @@ def run_app() -> None:
 
     document = st.session_state.document
     chunks = st.session_state.chunks
-    st.success(
-        text(
-            locale,
-            "ready",
-            name=uploaded_file.name,
-            pages=document.page_count,
-            chunks=len(chunks),
+    if {page.status for page in document.pages} == {"ok"} and not document.warnings:
+        st.success(
+            text(
+                locale,
+                "ready",
+                name=uploaded_file.name,
+                pages=document.page_count,
+                chunks=len(chunks),
+            )
         )
-    )
+    _render_extraction_summary(locale, document)
 
     with document_panel:
         page_number = min(
@@ -441,6 +641,7 @@ def run_app() -> None:
                 st.write(message["content"])
                 if message["role"] != "assistant":
                     continue
+                _render_answer_metadata(locale, message)
                 for source_index, source in enumerate(message.get("sources", ())):
                     st.button(
                         text(locale, "open_source", page=source.page_number),
@@ -480,16 +681,33 @@ def run_app() -> None:
             st.write(question)
 
         try:
-            answer = answer_question(
-                question,
-                chunks,
-                chat=partial(
-                    chat_with_ollama,
-                    model=model.strip() or DEFAULT_MODEL,
-                ),
-                previous_questions=previous_questions,
-                answer_language=ANSWER_LANGUAGE[locale],
-            )
+            model_name = model.strip() or DEFAULT_MODEL
+            if answer_mode == "agent":
+                agent_run = run_agent(
+                    question,
+                    document,
+                    chunks,
+                    chat=partial(_bounded_chat, model=model_name),
+                    previous_questions=previous_questions,
+                    answer_language=ANSWER_LANGUAGE[locale],
+                )
+                answer = agent_run.answer
+                metadata = _agent_metadata(agent_run)
+            else:
+                answer = answer_question(
+                    question,
+                    chunks,
+                    chat=partial(chat_with_ollama, model=model_name),
+                    previous_questions=previous_questions,
+                    answer_language=ANSWER_LANGUAGE[locale],
+                )
+                metadata = {
+                    "mode": "fixed",
+                    "status": "ok",
+                    "tool_calls": None,
+                    "llm_calls": None,
+                    "trace": (),
+                }
         except (ValueError, OllamaError, AnswerGenerationError):
             st.session_state.answer_failed = True
             st.rerun()
@@ -500,6 +718,7 @@ def run_app() -> None:
                 "role": "assistant",
                 "content": answer.text,
                 "sources": answer.sources,
+                "metadata": metadata,
             }
         )
         _trim_history(messages, history_limit)
