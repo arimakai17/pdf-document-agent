@@ -287,6 +287,135 @@ def test_chat_with_ollama_retains_socket_after_response_ownership_transfer(
     assert connection.response.close_during_read is False
 
 
+def test_chat_with_ollama_bounds_real_http_connection_address_attempts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    addresses = [
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("192.0.2.1", 11434)),
+        (
+            socket.AF_INET6,
+            socket.SOCK_STREAM,
+            6,
+            "",
+            ("2001:db8::1", 11434, 0, 0),
+        ),
+    ]
+    sockets = []
+
+    class BlackHoleSocket:
+        def __init__(self, *_args) -> None:
+            self.timeout = None
+            self.shutdown_called = False
+            self.closed = False
+            self._released = threading.Event()
+            sockets.append(self)
+
+        def settimeout(self, timeout: float) -> None:
+            self.timeout = timeout
+
+        def bind(self, _address) -> None:
+            pass
+
+        def connect(self, _address) -> None:
+            duration = 0.08 if len(sockets) == 1 else 0.3
+            end = time.monotonic() + duration
+            while time.monotonic() < end and not self._released.is_set():
+                time.sleep(0)
+            raise OSError("connection refused after black hole")
+
+        def shutdown(self, how: int) -> None:
+            assert how == socket.SHUT_RDWR
+            self.shutdown_called = True
+            self._released.set()
+
+        def close(self) -> None:
+            self.closed = True
+            self._released.set()
+
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *args: addresses)
+    monkeypatch.setattr(socket, "socket", BlackHoleSocket)
+
+    started = time.monotonic()
+    with pytest.raises(ollama.OllamaTimeoutError):
+        ollama.chat_with_ollama(
+            "system",
+            "user",
+            base_url="http://ollama.test:11434",
+            timeout=0.1,
+        )
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 0.25
+    assert len(sockets) == 2
+    assert sockets[0].timeout == pytest.approx(0.1, abs=0.01)
+    assert sockets[1].timeout < 0.04
+    assert any(sock.shutdown_called for sock in sockets)
+
+
+def test_chat_with_ollama_bounds_dns_and_caps_stuck_resolver_helpers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    resolver_started = threading.Event()
+    release_resolver = threading.Event()
+    resolver_finished = threading.Event()
+    helper_starts = []
+    real_run_attempt = ollama._run_deadline_connection_attempt
+
+    def blocking_getaddrinfo(*_args):
+        resolver_started.set()
+        release_resolver.wait()
+        resolver_finished.set()
+        return []
+
+    def track_run_attempt(*args, **kwargs):
+        helper_starts.append(True)
+        return real_run_attempt(*args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", blocking_getaddrinfo)
+    monkeypatch.setattr(
+        ollama,
+        "_run_deadline_connection_attempt",
+        track_run_attempt,
+    )
+
+    try:
+        started = time.monotonic()
+        with pytest.raises(ollama.OllamaTimeoutError):
+            ollama.chat_with_ollama(
+                "system",
+                "user",
+                base_url="http://ollama.test:11434",
+                timeout=0.05,
+            )
+        first_elapsed = time.monotonic() - started
+        assert resolver_started.is_set()
+        assert first_elapsed < 0.5
+
+        started = time.monotonic()
+        with pytest.raises(ollama.OllamaTimeoutError):
+            ollama.chat_with_ollama(
+                "system",
+                "user",
+                base_url="http://ollama.test:11434",
+                timeout=0.03,
+            )
+        second_elapsed = time.monotonic() - started
+        assert second_elapsed < 0.5
+        assert len(helper_starts) == 1
+    finally:
+        release_resolver.set()
+
+    assert resolver_finished.wait(1.0)
+    with pytest.raises(ollama.OllamaError):
+        ollama.chat_with_ollama(
+            "system",
+            "user",
+            base_url="http://ollama.test:11434",
+            timeout=0.5,
+        )
+    assert len(helper_starts) == 2
+
+
 def test_chat_with_ollama_aborts_https_upload_after_connect_uses_remaining_deadline(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
