@@ -499,6 +499,25 @@ def test_rewrite_rejects_nine_vocabulary_terms_when_first_segment_has_seven() ->
         )
 
 
+def test_rewrite_rejects_compact_segment_after_overlong_segment() -> None:
+    chunks = [
+        TextChunk(
+            index=0,
+            page_number=1,
+            text="alpha beta gamma delta epsilon zeta eta theta iota",
+        )
+    ]
+
+    with pytest.raises(AnswerGenerationError, match="слишком много терминов"):
+        _rewrite_search_query(
+            "alpha beta gamma delta epsilon zeta eta theta iota",
+            chunks,
+            lambda _system, _user: (
+                "alpha beta gamma delta epsilon zeta eta, theta iota"
+            ),
+        )
+
+
 def test_rewrite_rejects_more_than_eight_unique_vocabulary_terms() -> None:
     chunks = [
         TextChunk(
@@ -791,7 +810,9 @@ def test_follow_up_preserves_distant_ranked_result_when_adding_adjacent_context(
         TextChunk(
             index=3,
             page_number=4,
-            text="Think Python programming concepts approach.",
+            text=(
+                "Think Python programming concepts computer scientist approach."
+            ),
         ),
         TextChunk(
             index=4,

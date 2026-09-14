@@ -368,14 +368,18 @@ def _rewrite_search_query(
     # дописывает лишние темы через запятую. Берём первый компактный сегмент,
     # прошедший фильтр полного словаря документа. Это также пропускает мимо
     # сегменты на языке вопроса, если документ написан на другом языке.
+    overlong_segment_seen = False
     for segment in re.split(r"[,;]", raw):
         segment_terms = list(
             dict.fromkeys(
                 token for token in _tokenize(segment) if token in vocabulary
             )
         )
-        if minimum_terms <= len(segment_terms) <= _MAX_REWRITE_TERMS:
-            return " ".join(_select_rewrite_terms(segment_terms, chunks))
+        if len(segment_terms) > _MAX_REWRITE_TERMS:
+            overlong_segment_seen = True
+            continue
+        if not overlong_segment_seen and minimum_terms <= len(segment_terms):
+            return " ".join(segment_terms)
 
     terms = list(
         dict.fromkeys(token for token in _tokenize(raw) if token in vocabulary)
