@@ -19,6 +19,7 @@ from pdf_document_agent.extractor import (
     TextRegion,
     has_meaningful_text,
 )
+from pdf_document_agent.ollama import OllamaTimeoutError
 from pdf_document_agent.retrieval import SearchResult, TextChunk, search_chunks
 
 
@@ -236,6 +237,10 @@ def run_agent(
                 max_output_tokens=max_output_tokens,
                 timeout=min(limits.per_call_timeout_s, seconds),
             )
+        except OllamaTimeoutError as exc:
+            if seconds <= limits.per_call_timeout_s or remaining() <= 0:
+                raise _DeadlineStop from exc
+            raise _ModelCallError from exc
         except Exception as exc:
             raise _ModelCallError from exc
         if monotonic() >= deadline:

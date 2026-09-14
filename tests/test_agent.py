@@ -9,6 +9,7 @@ from pdf_document_agent.agent import (
 )
 from pdf_document_agent.answering import INSUFFICIENT_ANSWER, AnswerGenerationError
 from pdf_document_agent.extractor import ExtractedDocument, ExtractedPage, TextRegion
+from pdf_document_agent.ollama import OllamaTimeoutError
 from pdf_document_agent.retrieval import TextChunk, chunk_document
 
 
@@ -380,6 +381,28 @@ def test_deadline_can_expire_before_planner_call(monkeypatch: pytest.MonkeyPatch
     assert run.status == "budget_exhausted"
     assert run.llm_calls == 0
     assert chat.calls == []
+
+
+def test_ollama_timeout_at_run_deadline_is_budget_exhausted() -> None:
+    document, chunks = make_document("Python facts.")
+    calls: list[float] = []
+
+    def timeout_chat(*_args, timeout: float, **_kwargs) -> str:
+        calls.append(timeout)
+        raise OllamaTimeoutError("total deadline exceeded")
+
+    run = run_agent(
+        "Что такое Python?",
+        document,
+        chunks,
+        chat=timeout_chat,
+        limits=AgentLimits(per_call_timeout_s=1.0, run_deadline_s=0.01),
+    )
+
+    assert run.status == "budget_exhausted"
+    assert run.answer.text == INSUFFICIENT_ANSWER
+    assert run.llm_calls == 1
+    assert len(calls) == 1
 
 
 def test_oversized_planner_response_fails_closed() -> None:
