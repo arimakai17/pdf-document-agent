@@ -401,8 +401,11 @@ def test_extraction_config_is_canonical_and_validated() -> None:
     ("markdown", "expected"),
     [
         ("<!-- image -->", False),
+        ("<!-- image --", False),
         ("<!-- image -->[truncated]", False),
         ("![diagram](diagram.png)", False),
+        ("![diagram](diagram", False),
+        ("<figure data=\"x\"", False),
         ("<!-- image -->Useful source text", True),
     ],
 )
@@ -729,6 +732,37 @@ def test_ocr_converter_initialization_failure_returns_partial_document(
     assert len(result.warnings) == 2
 
 
+def test_ocr_converter_initialization_diagnostic_is_bounded_and_sanitized(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pdf_path = tmp_path / "ocr-init-diagnostic.pdf"
+    pdf_path.write_bytes(b"%PDF")
+    first = _text_document({1: ""}, [_picture(1)])
+    raw_diagnostic = "OCR backend unavailable\n\t" + "x" * 500
+
+    class InitFailingConverter(_AdaptiveConverter):
+        def __init__(self, *, format_options=None) -> None:
+            assert format_options is not None
+            options = format_options[InputFormat.PDF].pipeline_options
+            if options.do_ocr:
+                raise RuntimeError(raw_diagnostic)
+            super().__init__(format_options=format_options)
+
+    _AdaptiveConverter.documents = {(False, None): first}
+    _AdaptiveConverter.init_options = []
+    _AdaptiveConverter.convert_calls = []
+    monkeypatch.setattr(extractor, "DocumentConverter", InitFailingConverter)
+
+    result = extractor.extract_pdf(pdf_path)
+
+    diagnostic = result.warnings[0].removeprefix("Page 1: ")
+    assert len(diagnostic) == 300
+    assert "\n" not in diagnostic
+    assert "\t" not in diagnostic
+    assert diagnostic.startswith("OCR backend unavailable")
+
+
 def test_manual_ocr_override_of_blank_page_stays_empty(tmp_path, monkeypatch) -> None:
     pdf_path = tmp_path / "blank-override.pdf"
     pdf_path.write_bytes(b"%PDF")
@@ -748,6 +782,7 @@ def test_manual_ocr_override_of_blank_page_stays_empty(tmp_path, monkeypatch) ->
     assert result.pages[0].route == "docling_ocr"
     assert result.pages[0].status == "empty"
     assert result.pages[0].diagnostic is None
+    assert result.warnings == ()
 
 
 def test_empty_manual_ocr_result_preserves_usable_first_pass_text(
@@ -775,6 +810,7 @@ def test_empty_manual_ocr_result_preserves_usable_first_pass_text(
     assert page.status == "ok"
     assert page.markdown == original
     assert page.diagnostic == "OCR page has no usable text"
+    assert result.warnings == ("Page 1: OCR page has no usable text",)
 
 
 def test_invalid_override_is_rejected_before_selective_call(tmp_path, monkeypatch) -> None:

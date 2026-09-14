@@ -18,6 +18,7 @@ from pdf_document_agent.extractor import (
     NormalizedBox,
     TextRegion,
     has_meaningful_text,
+    remove_known_extraction_noise,
 )
 from pdf_document_agent.ollama import OllamaTimeoutError
 from pdf_document_agent.retrieval import SearchResult, TextChunk, search_chunks
@@ -309,7 +310,7 @@ def run_agent(
         )
 
     def add_evidence(item: EvidenceExcerpt) -> EvidenceExcerpt | None:
-        source_text = item.text.strip()
+        source_text = remove_known_extraction_noise(item.text).strip()
         if (
             not has_meaningful_text(source_text)
             or item.evidence_id in evidence_ids

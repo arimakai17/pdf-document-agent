@@ -205,11 +205,21 @@ def test_marker_only_search_result_is_not_evidence_or_final_context() -> None:
     assert run.llm_calls == 2
 
 
-def test_truncation_cannot_admit_marker_only_bounded_prefix() -> None:
-    document, chunks = make_document("<!-- image -->Useful facts about Python.")
+@pytest.mark.parametrize(
+    "source",
+    [
+        "<!-- image --[truncated]",
+        "![diagram](diagram[truncated]",
+        '<image data="[truncated]',
+        '<figure data="[truncated]',
+    ],
+)
+@pytest.mark.parametrize("cap", [23, 24, 25])
+def test_noise_marker_prefix_cannot_become_evidence(source: str, cap: int) -> None:
+    document, chunks = make_document(source)
     chat = scripted_chat(
         [
-            '{"action":"search","query":"Python","top_k":1}',
+            '{"action":"read_page","page":1}',
             '{"action":"answer_ready"}',
             "Something [стр. 1].",
         ]
@@ -221,8 +231,8 @@ def test_truncation_cannot_admit_marker_only_bounded_prefix() -> None:
         chunks,
         chat=chat,
         limits=AgentLimits(
-            max_tool_excerpt_chars=25,
-            max_final_evidence_chars=25,
+            max_tool_excerpt_chars=cap,
+            max_final_evidence_chars=cap,
         ),
     )
 
@@ -230,6 +240,67 @@ def test_truncation_cannot_admit_marker_only_bounded_prefix() -> None:
     assert run.answer.text == INSUFFICIENT_ANSWER
     assert run.final_evidence_packet == ()
     assert run.llm_calls == 2
+
+
+@pytest.mark.parametrize(
+    "marker",
+    [
+        "<!-- image -->",
+        "![diagram](diagram.png)",
+        '<image data="x">',
+        '<figure data="x">',
+    ],
+)
+@pytest.mark.parametrize("cap", [23, 24, 25])
+def test_noise_is_removed_before_evidence_bounds(marker: str, cap: int) -> None:
+    document, chunks = make_document(marker + "Useful facts about Python.")
+    chat = scripted_chat(
+        [
+            '{"action":"read_page","page":1}',
+            '{"action":"answer_ready"}',
+            "Useful facts about Python [стр. 1].",
+        ]
+    )
+
+    run = run_agent(
+        "Что известно?",
+        document,
+        chunks,
+        chat=chat,
+        limits=AgentLimits(
+            max_tool_excerpt_chars=cap,
+            max_final_evidence_chars=cap,
+        ),
+    )
+
+    assert run.status == "ok"
+    assert run.final_evidence_packet[0].text.startswith("Useful")
+    assert marker not in run.final_evidence_packet[0].text
+
+
+@pytest.mark.parametrize(
+    "marker",
+    [
+        "<!-- image -->",
+        "![diagram](diagram.png)",
+        '<image data="x">',
+        '<figure data="x">',
+    ],
+)
+def test_marker_and_useful_text_that_fits_remains_evidence(marker: str) -> None:
+    document, chunks = make_document(marker + "Python facts.")
+    chat = scripted_chat(
+        [
+            '{"action":"read_page","page":1}',
+            '{"action":"answer_ready"}',
+            "Python facts [стр. 1].",
+        ]
+    )
+
+    run = run_agent("Что известно?", document, chunks, chat=chat)
+
+    assert run.status == "ok"
+    assert run.final_evidence_packet[0].text == "Python facts."
 
 
 @pytest.mark.parametrize("question", [None, 42, "", "   "])

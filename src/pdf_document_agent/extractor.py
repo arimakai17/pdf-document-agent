@@ -26,7 +26,8 @@ NormalizedBox = tuple[float, float, float, float]
 _GATE_VERSION = "wave2-meaningful-text-v1"
 _WORD_PATTERN = re.compile(r"[^\W_]+(?:[-'][^\W_]+)*", re.UNICODE)
 _MARKDOWN_NOISE = re.compile(
-    r"<!--.*?-->|!\[[^\]]*\]\([^)]*\)|<\/?(?:image|figure)[^>]*>|\[truncated\]",
+    r"<!--.*?(?:-->|$)|!\[.*?(?:\]\([^)]*\)|$)|"
+    r"<\/?(?:image|figure)\b.*?(?:>|$)|\[truncated\]",
     re.IGNORECASE | re.DOTALL,
 )
 _MAX_MANUAL_OCR_PAGES = 1_000
@@ -262,7 +263,7 @@ def extract_pdf(
         try:
             ocr_converter = _make_ocr_converter(config)
         except Exception as error:
-            diagnostic = str(error) or type(error).__name__
+            diagnostic = _bounded_diagnostic(str(error)) or type(error).__name__
             for page_number in ocr_targets:
                 pages[page_number] = _failed_ocr_page(
                     pages[page_number], diagnostic
@@ -498,7 +499,7 @@ def _extract_ocr_page(
                     diagnostic = _bounded_diagnostic("OCR page has no usable text")
                 return (
                     _failed_ocr_page(first_page, diagnostic),
-                    _ocr_warnings(page_number, page_diagnostic, document_diagnostics),
+                    _ocr_warnings(page_number, diagnostic, document_diagnostics),
                 )
             if not page_diagnostic and not significant_raster:
                 return (
@@ -618,11 +619,16 @@ def _export_page_markdown(document, page_number: int) -> str:
 
 
 def _meaningful_metrics(markdown: str) -> tuple[int, int]:
-    cleaned = _MARKDOWN_NOISE.sub(" ", markdown)
+    cleaned = remove_known_extraction_noise(markdown)
     cleaned = re.sub(r"[`*_~#>|]", " ", cleaned)
     chars = len(re.sub(r"\s+", "", cleaned))
     words = len(_WORD_PATTERN.findall(cleaned))
     return chars, words
+
+
+def remove_known_extraction_noise(markdown: str) -> str:
+    """Удалить известные неинформативные маркеры extraction/service слоя."""
+    return _MARKDOWN_NOISE.sub(" ", markdown)
 
 
 def has_meaningful_text(markdown: str) -> bool:
