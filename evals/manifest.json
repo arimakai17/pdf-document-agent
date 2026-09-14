@@ -1,0 +1,192 @@
+{
+  "schema_version": 1,
+  "baseline": {
+    "tag": "pdf-atlas-v1-submission",
+    "commit": "1f7dcc0ee3cd652a3d00688e142d7da33fce802a"
+  },
+  "reproducibility": {
+    "git_commit": null,
+    "lockfile": null,
+    "docling_version": null,
+    "ocrmac_version": null,
+    "ollama_version": null,
+    "model_name": null,
+    "model_digest": null,
+    "options_prompts": null,
+    "extraction_config_fingerprint": null,
+    "gate_version": null,
+    "warm_cold_protocol": "cold: uncached ingestion; warm: warmed artifact followed by QA",
+    "seed": null
+  },
+  "documents": [
+    {
+      "id": "synthetic-text-tuning",
+      "kind": "synthetic",
+      "basename": "synthetic-text-tuning.pdf",
+      "sha256": "3c109fdc37598cc489f0ee6ef9d4d92414f9df22a676a81bb37c504e315a0a2f"
+    },
+    {
+      "id": "synthetic-mixed-tuning",
+      "kind": "synthetic",
+      "basename": "synthetic-mixed-tuning.pdf",
+      "sha256": "335a88b97e9a234299a40f253e2d69c09962a3a2a9009833daf6a88417fda6f4"
+    },
+    {
+      "id": "real-acceptance-text-pending",
+      "kind": "real",
+      "basename": "real-acceptance-text-pending.pdf",
+      "sha256": null
+    },
+    {
+      "id": "real-acceptance-mixed-pending",
+      "kind": "real",
+      "basename": "real-acceptance-mixed-pending.pdf",
+      "sha256": null
+    }
+  ],
+  "cases": [
+    {
+      "id": "tuning-text-and-lexical",
+      "split": "tuning",
+      "categories": ["text_page", "answerable_similar_words"],
+      "document_id": "synthetic-text-tuning",
+      "extraction": [
+        {"page": 1, "route": "docling_text", "status": "ok"},
+        {"page": 2, "route": "docling_text", "status": "ok"}
+      ],
+      "questions": [
+        {
+          "id": "q-definition",
+          "text": "What color is the atlas marker?",
+          "answerable": true,
+          "source_page_sets": [[1]]
+        },
+        {
+          "id": "q-similar-words",
+          "text": "Which two steps begin and end the launch sequence?",
+          "answerable": true,
+          "source_page_sets": [[1, 2]]
+        }
+      ]
+    },
+    {
+      "id": "tuning-scan-and-noise",
+      "split": "tuning",
+      "categories": ["scan_page", "ocr_noise"],
+      "document_id": "synthetic-mixed-tuning",
+      "extraction": [
+        {"page": 1, "route": "docling_ocr", "status": "ok"},
+        {"page": 2, "route": "docling_ocr", "status": "failed"}
+      ],
+      "questions": [
+        {
+          "id": "q-scanned-fact",
+          "text": "What is the river code?",
+          "answerable": true,
+          "source_page_sets": [[1]]
+        },
+        {
+          "id": "q-noisy-fact",
+          "text": "What does the noisy signal say?",
+          "answerable": true,
+          "source_page_sets": [[2]]
+        }
+      ]
+    },
+    {
+      "id": "tuning-mixed-and-sparse",
+      "split": "tuning",
+      "categories": [
+        "alternating_mixed_pages",
+        "same_page_text_raster",
+        "blank_sparse_page"
+      ],
+      "document_id": "synthetic-mixed-tuning",
+      "extraction": [
+        {"page": 3, "route": "docling_ocr", "status": "ok"},
+        {"page": 4, "route": "docling_ocr", "status": "ok"},
+        {"page": 5, "route": "docling_text", "status": "empty"}
+      ],
+      "questions": [
+        {
+          "id": "q-mixed-page",
+          "text": "What are the digital control token and raster panel token?",
+          "answerable": true,
+          "source_page_sets": [[3]]
+        },
+        {
+          "id": "q-alternating-scan",
+          "text": "What is the archive key on the next scanned page?",
+          "answerable": true,
+          "source_page_sets": [[4]]
+        },
+        {
+          "id": "q-sparse-refusal",
+          "text": "Which contract number appears on the blank page?",
+          "answerable": false,
+          "source_page_sets": []
+        }
+      ]
+    },
+    {
+      "id": "acceptance-multipage-pending",
+      "split": "acceptance",
+      "categories": ["multi_page_answer", "ambiguous_lexical_matches"],
+      "document_id": "real-acceptance-text-pending",
+      "extraction": [
+        {"page": 1, "route": "docling_text", "status": "ok"},
+        {"page": 2, "route": "docling_text", "status": "ok"},
+        {"page": 3, "route": "docling_text", "status": "ok"}
+      ],
+      "questions": [
+        {
+          "id": "q-multi-page",
+          "text": "Pending held-out multi-page question.",
+          "answerable": true,
+          "source_page_sets": [[1, 2], [2, 3]]
+        },
+        {
+          "id": "q-ambiguous-refusal",
+          "text": "Pending held-out ambiguous lexical question.",
+          "answerable": false,
+          "source_page_sets": []
+        }
+      ]
+    },
+    {
+      "id": "acceptance-similar-words-pending",
+      "split": "acceptance",
+      "categories": ["unanswerable_similar_words"],
+      "document_id": "real-acceptance-text-pending",
+      "extraction": [
+        {"page": 1, "route": "docling_text", "status": "ok"}
+      ],
+      "questions": [
+        {
+          "id": "q-similar-but-absent",
+          "text": "Pending held-out similar-words refusal question.",
+          "answerable": false,
+          "source_page_sets": []
+        }
+      ]
+    },
+    {
+      "id": "acceptance-mixed-pending",
+      "split": "acceptance",
+      "categories": ["same_page_text_raster", "alternating_mixed_pages"],
+      "document_id": "real-acceptance-mixed-pending",
+      "extraction": [
+        {"page": 1, "route": "docling_text", "status": "ok"},
+        {"page": 2, "route": "docling_ocr", "status": "ok"}
+      ],
+      "questions": [
+        {
+          "id": "q-mixed-acceptance",
+          "text": "Pending held-out same-page mixed-content question.",
+          "answerable": true,
+          "source_page_sets": [[1, 2]]
+        }
+      ]
+    }
+  ]
+}
