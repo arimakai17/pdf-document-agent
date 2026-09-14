@@ -459,6 +459,43 @@ def test_rewrite_selects_first_compact_group_from_real_qwen_output() -> None:
     assert query == "software entropy definition"
 
 
+def test_rewrite_selects_six_rarest_terms_in_original_order() -> None:
+    chunks = [
+        TextChunk(index=0, page_number=1, text="common alpha"),
+        TextChunk(index=1, page_number=2, text="common beta"),
+        TextChunk(index=2, page_number=3, text="common gamma"),
+        TextChunk(index=3, page_number=4, text="common delta"),
+        TextChunk(index=4, page_number=5, text="common epsilon"),
+        TextChunk(index=5, page_number=6, text="common zeta"),
+        TextChunk(index=6, page_number=7, text="common eta"),
+    ]
+
+    query = _rewrite_search_query(
+        "alpha beta gamma delta epsilon zeta eta common",
+        chunks,
+        lambda _system, _user: "alpha beta gamma delta epsilon zeta eta common",
+    )
+
+    assert query == "alpha beta gamma delta epsilon zeta"
+
+
+def test_rewrite_rejects_more_than_eight_unique_vocabulary_terms() -> None:
+    chunks = [
+        TextChunk(
+            index=0,
+            page_number=1,
+            text="alpha beta gamma delta epsilon zeta eta theta iota",
+        )
+    ]
+
+    with pytest.raises(AnswerGenerationError, match="слишком много терминов"):
+        _rewrite_search_query(
+            "alpha beta gamma delta epsilon zeta eta theta iota",
+            chunks,
+            lambda _system, _user: "alpha beta gamma delta epsilon zeta eta theta iota",
+        )
+
+
 def test_rewrite_rejects_unstructured_long_model_output() -> None:
     chunks = _entropy_chunks()
     malformed = "software entropy " * 20
@@ -716,6 +753,44 @@ def test_answer_includes_following_chunks_for_section_continuation() -> None:
 
     assert answer.source_pages == (43,)
     assert answer.sources[0].excerpt.startswith("Fix each broken window")
+
+
+def test_follow_up_preserves_distant_ranked_result_when_adding_adjacent_context() -> None:
+    chunks = [
+        TextChunk(index=0, page_number=1, text="A completely unrelated preface."),
+        TextChunk(index=1, page_number=4, text="An unrelated neighboring passage."),
+        TextChunk(index=2, page_number=3, text="Think Python"),
+        TextChunk(index=3, page_number=4, text="Another unrelated neighboring passage."),
+        TextChunk(index=4, page_number=5, text="Yet another unrelated neighboring passage."),
+        TextChunk(index=5, page_number=6, text="A final unrelated neighboring passage."),
+        TextChunk(
+            index=6,
+            page_number=21,
+            text=(
+                "Think Python describes mathematics, engineering, and natural "
+                "science as ways to think like a computer scientist."
+            ),
+        ),
+    ]
+    answer_prompt: str | None = None
+
+    def chat(system_prompt: str, user_prompt: str) -> str:
+        nonlocal answer_prompt
+        if system_prompt == _REWRITE_SYSTEM_PROMPT:
+            return "think python"
+        answer_prompt = user_prompt
+        return "Автор выделяет математический, инженерный и научный подходы [стр. 21]."
+
+    answer = answer_question(
+        'что автор имеет ввиду под "мыслить как компьютерный ученый"?',
+        chunks,
+        chat=chat,
+        previous_questions=("что имеет ввиду автор под Think Python?",),
+    )
+
+    assert answer_prompt is not None
+    assert "[Страница 21]" in answer_prompt
+    assert answer.source_pages == (21,)
 
 
 def test_adjacent_context_preserves_query_specific_highlight_boxes() -> None:

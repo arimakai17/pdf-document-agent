@@ -102,6 +102,7 @@ _SAMPLE_MAX_CHARS = 1_500
 # Ограничения на вывод модели, чтобы malformed/длинный ответ не раздувал поиск.
 _MAX_REWRITE_OUTPUT_CHARS = 200
 _MAX_REWRITE_TERMS = 6
+_MAX_REWRITE_VOCAB_TERMS = 8
 _MAX_LANGUAGE_OUTPUT_CHARS = 40
 _MAX_PREVIOUS_QUESTIONS = 3
 _MAX_PREVIOUS_QUESTION_CHARS = 500
@@ -373,19 +374,40 @@ def _rewrite_search_query(
                 token for token in _tokenize(segment) if token in vocabulary
             )
         )
-        if minimum_terms <= len(segment_terms) <= _MAX_REWRITE_TERMS:
-            return " ".join(segment_terms)
+        if minimum_terms <= len(segment_terms) <= _MAX_REWRITE_VOCAB_TERMS:
+            return " ".join(_select_rewrite_terms(segment_terms, chunks))
 
     terms = list(
         dict.fromkeys(token for token in _tokenize(raw) if token in vocabulary)
     )
-    if len(terms) > _MAX_REWRITE_TERMS:
+    if len(terms) > _MAX_REWRITE_VOCAB_TERMS:
         raise AnswerGenerationError(
             "Модель вернула слишком много терминов в переписанном поисковом запросе."
         )
     if len(terms) < minimum_terms:
         return None
-    return " ".join(terms)
+    return " ".join(_select_rewrite_terms(terms, chunks))
+
+
+def _select_rewrite_terms(
+    terms: list[str],
+    chunks: list[TextChunk],
+) -> list[str]:
+    """Ограничить небольшой near-miss редкими терминами в исходном порядке."""
+    if len(terms) <= _MAX_REWRITE_TERMS:
+        return terms
+
+    chunk_terms = [set(_tokenize(chunk.text)) for chunk in chunks]
+    document_frequency = {
+        term: sum(term in terms_in_chunk for terms_in_chunk in chunk_terms)
+        for term in terms
+    }
+    selected_indexes = sorted(
+        range(len(terms)),
+        key=lambda index: (document_frequency[terms[index]], index),
+    )[:_MAX_REWRITE_TERMS]
+    selected = set(selected_indexes)
+    return [term for index, term in enumerate(terms) if index in selected]
 
 
 def _detect_document_language(
@@ -426,13 +448,29 @@ def _add_adjacent_context(
         return results[:limit]
 
     position_by_index = {chunk.index: position for position, chunk in enumerate(chunks)}
-    retrieved_by_index = {result.chunk.index: result for result in results}
-    anchor_position = position_by_index.get(results[0].chunk.index)
-    if anchor_position is None:
-        return results[:limit]
+    reserved: list[SearchResult] = []
+    seen: set[int] = set()
+    for result in results:
+        if result.chunk.index in seen:
+            continue
+        seen.add(result.chunk.index)
+        reserved.append(result)
+        if len(reserved) >= limit:
+            break
 
-    expanded = [results[0]]
-    seen = {results[0].chunk.index}
+    if not reserved:
+        return []
+
+    retrieved_by_index: dict[int, SearchResult] = {}
+    for result in results:
+        retrieved_by_index.setdefault(result.chunk.index, result)
+    anchor_position = position_by_index.get(reserved[0].chunk.index)
+    if anchor_position is None:
+        return reserved[:limit]
+
+    expanded = reserved[:limit]
+    if len(expanded) >= limit:
+        return expanded
     for offset in (1, 2, -1, -2):
         position = anchor_position + offset
         if position < 0 or position >= len(chunks):
@@ -449,14 +487,6 @@ def _add_adjacent_context(
         )
         if len(expanded) >= limit:
             return expanded
-
-    for result in results[1:]:
-        if result.chunk.index in seen:
-            continue
-        seen.add(result.chunk.index)
-        expanded.append(result)
-        if len(expanded) >= limit:
-            break
     return expanded
 
 
