@@ -8,6 +8,7 @@ from pdf_document_agent import answering
 from pdf_document_agent import cache
 from pdf_document_agent.agent import AgentTraceEvent
 from pdf_document_agent.extractor import (
+    ExtractionConfig,
     ExtractedDocument,
     ExtractedPage,
     TextRegion,
@@ -582,6 +583,88 @@ def test_extraction_summary_keeps_routes_status_diagnostics_and_warnings_visible
     assert "docling_ocr" in details
     assert "OCR unavailable" in details
     assert "Page 2: OCR unavailable" in details
+
+
+def test_all_ok_extraction_is_not_reported_as_partial(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("PDF_DOCUMENT_AGENT_CACHE_DIR", str(tmp_path))
+    file_bytes = b"%PDF-1.4 all ok"
+    _seed_cached_pdf(file_bytes)
+
+    app = AppTest.from_file(str(APP_PATH)).run(timeout=30)
+    app.get("file_uploader")[0].set_value(
+        ("all-ok.pdf", file_bytes, "application/pdf")
+    )
+    app.run(timeout=30)
+
+    assert not app.exception
+    assert not any("частич" in item.value.casefold() for item in app.warning)
+
+
+def test_mode_change_keeps_artifact_but_ocr_override_changes_it(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setenv("PDF_DOCUMENT_AGENT_CACHE_DIR", str(tmp_path))
+    file_bytes = b"%PDF-1.4 config identity"
+    region = TextRegion(page_number=1, text="usable text", box=(0, 0, 1, 1))
+    chunks = [
+        TextChunk(
+            index=0,
+            page_number=1,
+            text="usable text",
+            boxes=(region.box,),
+            regions=(region,),
+        )
+    ]
+    default_document = ExtractedDocument(
+        source_name="identity.pdf",
+        markdown="usable text",
+        page_count=1,
+        pages=(
+            ExtractedPage(
+                number=1,
+                markdown="usable text",
+                regions=(region,),
+                route="docling_text",
+            ),
+        ),
+    )
+    override_config = ExtractionConfig(ocr_pages=(1,))
+    override_document = ExtractedDocument(
+        source_name="identity.pdf",
+        markdown="usable text",
+        page_count=1,
+        pages=(
+            ExtractedPage(
+                number=1,
+                markdown="usable text",
+                regions=(region,),
+                route="docling_ocr",
+                reason="manual override",
+            ),
+        ),
+        config_fingerprint=override_config.fingerprint,
+    )
+    _seed_document(file_bytes, default_document, chunks)
+    _seed_document(file_bytes, override_document, chunks)
+
+    app = AppTest.from_file(str(APP_PATH)).run(timeout=30)
+    app.get("file_uploader")[0].set_value(
+        ("identity.pdf", file_bytes, "application/pdf")
+    )
+    app.run(timeout=30)
+    default_identity = app.session_state["artifact_identity"]
+    assert app.session_state["document"].pages[0].route == "docling_text"
+
+    app.radio[0].set_value("agent").run(timeout=30)
+    assert app.session_state["artifact_identity"] == default_identity
+
+    next(
+        item for item in app.text_input if item.label == "Страницы для ручного OCR"
+    ).set_value("1").run(timeout=30)
+
+    assert app.session_state["artifact_identity"] != default_identity
+    assert app.session_state["artifact_identity"][1] == override_config.fingerprint
+    assert app.session_state["document"].pages[0].route == "docling_ocr"
 
 
 def test_agent_dispatch_stores_compact_trace_and_does_not_call_fixed(

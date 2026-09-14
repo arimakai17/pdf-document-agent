@@ -262,6 +262,8 @@ def _render_extraction_summary(locale: Locale, document: ExtractedDocument) -> N
     statuses = {page.status for page in document.pages}
     if not document.pages or statuses == {"empty"}:
         st.warning(text(locale, "extraction_empty"))
+    elif statuses == {"ok"}:
+        pass
     elif "ok" in statuses:
         st.warning(text(locale, "extraction_partial"))
     else:
