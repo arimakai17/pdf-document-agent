@@ -1,3 +1,4 @@
+import http.client
 import json
 import socket
 import socketserver
@@ -87,6 +88,91 @@ class PreRequestHTTPSConnection(FakeConnection):
             self.connect()
         self.request_args = (method, path, body, headers)
         self.sock.sendall(body)
+
+
+class HandshakeRawSocket:
+    def __init__(self) -> None:
+        self.timeout = None
+        self.closed = False
+
+    def setsockopt(self, *_args) -> None:
+        pass
+
+    def settimeout(self, timeout: float) -> None:
+        self.timeout = timeout
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class HandshakeSSLSocket:
+    def __init__(self) -> None:
+        self.timeout = None
+        self.shutdown_called = False
+        self.shutdown_during_handshake = False
+        self.handshake_started = threading.Event()
+        self.handshake_finished = threading.Event()
+        self._shutdown = threading.Event()
+
+    def settimeout(self, timeout: float) -> None:
+        self.timeout = timeout
+
+    def do_handshake(self) -> None:
+        self.handshake_started.set()
+        if self._shutdown.wait(0.5):
+            self.shutdown_during_handshake = True
+            self.handshake_finished.set()
+            raise OSError("TLS socket shut down")
+        self.handshake_finished.set()
+        raise OSError("TLS handshake was not interrupted")
+
+    def shutdown(self, how: int) -> None:
+        assert how == socket.SHUT_RDWR
+        self.shutdown_called = True
+        self._shutdown.set()
+
+    def close(self) -> None:
+        pass
+
+
+class HandshakeContext:
+    def __init__(self, ssl_socket: HandshakeSSLSocket) -> None:
+        self.ssl_socket = ssl_socket
+        self.raw_socket = None
+        self.server_hostname = None
+        self.do_handshake_on_connect = None
+
+    def wrap_socket(
+        self,
+        raw_socket,
+        *,
+        server_hostname: str,
+        do_handshake_on_connect: bool = True,
+    ) -> HandshakeSSLSocket:
+        self.raw_socket = raw_socket
+        self.server_hostname = server_hostname
+        self.do_handshake_on_connect = do_handshake_on_connect
+        if do_handshake_on_connect:
+            self.ssl_socket.do_handshake()
+        return self.ssl_socket
+
+
+class HandshakeHTTPSConnection(http.client.HTTPSConnection):
+    instances: list["HandshakeHTTPSConnection"] = []
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.raw_socket = HandshakeRawSocket()
+        self.ssl_socket = HandshakeSSLSocket()
+        self.context = HandshakeContext(self.ssl_socket)
+        self._context = self.context
+        self.create_connection_args = None
+        self._create_connection = self._create_raw_socket
+        type(self).instances.append(self)
+
+    def _create_raw_socket(self, address, timeout, source_address=None):
+        self.create_connection_args = (address, timeout, source_address)
+        return self.raw_socket
 
 
 class BlockingResponse:
@@ -224,6 +310,51 @@ def test_chat_with_ollama_aborts_https_upload_after_connect_uses_remaining_deadl
     assert 0 < connection.sock.timeout < 0.4
     assert connection.sock.shutdown_during_send is True
     assert connection.sock.shutdown_called is True
+    assert len(watchdogs) == 1
+    assert watchdogs[0].is_alive() is False
+
+
+def test_chat_with_ollama_aborts_real_https_handshake_at_total_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    HandshakeHTTPSConnection.instances.clear()
+    monkeypatch.setattr(ollama, "HTTPSConnection", HandshakeHTTPSConnection)
+    registered_sockets = []
+    real_register_socket = ollama._ExchangeWatchdog.register_socket
+
+    def record_socket_registration(watchdog, sock) -> None:
+        registered_sockets.append(sock)
+        real_register_socket(watchdog, sock)
+
+    monkeypatch.setattr(
+        ollama._ExchangeWatchdog,
+        "register_socket",
+        record_socket_registration,
+    )
+    watchdogs = _track_watchdog_threads(monkeypatch)
+
+    started = time.monotonic()
+    with pytest.raises(ollama.OllamaTimeoutError):
+        ollama.chat_with_ollama(
+            "system",
+            "user",
+            base_url="https://ollama.test:11434",
+            timeout=0.05,
+        )
+    elapsed = time.monotonic() - started
+
+    connection = HandshakeHTTPSConnection.instances[0]
+    assert elapsed < 0.3
+    assert connection.create_connection_args[0] == ("ollama.test", 11434)
+    assert 0 < connection.raw_socket.timeout < 0.05
+    assert registered_sockets[:2] == [connection.raw_socket, connection.ssl_socket]
+    assert connection.context.raw_socket is connection.raw_socket
+    assert connection.context.server_hostname == "ollama.test"
+    assert connection.context.do_handshake_on_connect is False
+    assert connection.ssl_socket.handshake_started.is_set()
+    assert connection.ssl_socket.shutdown_during_handshake is True
+    assert connection.ssl_socket.shutdown_called is True
+    assert connection.ssl_socket.handshake_finished.is_set()
     assert len(watchdogs) == 1
     assert watchdogs[0].is_alive() is False
 

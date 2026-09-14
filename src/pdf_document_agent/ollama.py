@@ -75,6 +75,38 @@ class _ExchangeWatchdog:
             pass
 
 
+def _connect_with_deadline(
+    connection,
+    deadline: float,
+    watchdog: _ExchangeWatchdog,
+    *,
+    server_hostname: str | None,
+):
+    connection.timeout = max(0.001, deadline - monotonic())
+    if server_hostname is None or not isinstance(
+        connection,
+        http.client.HTTPSConnection,
+    ):
+        connection.connect()
+        return getattr(connection, "sock", None)
+
+    # HTTPSConnection owns _context; keep staged socket ownership here.
+    http.client.HTTPConnection.connect(connection)
+    raw_socket = connection.sock
+    watchdog.register_socket(raw_socket)
+    raw_socket.settimeout(max(0.001, deadline - monotonic()))
+    ssl_socket = connection._context.wrap_socket(
+        raw_socket,
+        server_hostname=server_hostname,
+        do_handshake_on_connect=False,
+    )
+    connection.sock = ssl_socket
+    watchdog.register_socket(ssl_socket)
+    ssl_socket.settimeout(max(0.001, deadline - monotonic()))
+    ssl_socket.do_handshake()
+    return ssl_socket
+
+
 def chat_with_ollama(
     system_prompt: str,
     user_prompt: str,
@@ -140,10 +172,17 @@ def chat_with_ollama(
     exchange_socket = None
     try:
         watchdog.start()
-        connection.timeout = max(0.001, deadline - monotonic())
         if getattr(connection, "sock", None) is None:
-            connection.connect()
-        exchange_socket = getattr(connection, "sock", None)
+            exchange_socket = _connect_with_deadline(
+                connection,
+                deadline,
+                watchdog,
+                server_hostname=(
+                    parsed.hostname if parsed.scheme == "https" else None
+                ),
+            )
+        else:
+            exchange_socket = getattr(connection, "sock", None)
         watchdog.register_socket(exchange_socket)
         if exchange_socket is not None:
             exchange_socket.settimeout(max(0.001, deadline - monotonic()))
