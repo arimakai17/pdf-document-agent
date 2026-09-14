@@ -1,0 +1,706 @@
+{
+  "schema_version": 1,
+  "run_date": "2026-09-14",
+  "baseline": {
+    "tag": "pdf-atlas-v1-submission",
+    "commit": "1f7dcc0ee3cd652a3d00688e142d7da33fce802a"
+  },
+  "candidate_extraction_commit": "879918b7979f01baa1e00837e22568cbfcbbd569",
+  "eval_manifest_sha256": "7998b58e326e4a286d582ca58b89bad398ce0a550f8793704d16328f2b375480",
+  "lockfile_sha256": "6e790cd37fa13c0e130ea9813d318f608da1640f53edc0ad06b813001a1314eb",
+  "runtime": {
+    "platform": "macOS-26.5.1-arm64-arm-64bit-Mach-O",
+    "python": "3.13.0",
+    "versions": {
+      "docling": "2.126.0",
+      "docling-core": "2.95.0",
+      "ocrmac": "1.0.1",
+      "pypdfium2": "5.13.0",
+      "Pillow": "12.3.0"
+    },
+    "model": "qwen3:14b",
+    "model_digest": "bdbd181c33f2ed1b31c972991882db3cf4d192569092138a7d29e973cd9debe8",
+    "model_options": {
+      "temperature": 0.1,
+      "seed": 42,
+      "num_ctx": 8192,
+      "num_predict": 600
+    }
+  },
+  "b2_predeclared_gates": {
+    "no_extraction_errors_or_timeouts": true,
+    "text_only_B_median_not_slower_than_A": true,
+    "each_mixed_B_over_A_median_at_most": 2.0,
+    "each_artifact_median_seconds_at_most": 30.0,
+    "B_OCR_pages_at_most_half_A_on_unique_declared_artifacts": true,
+    "citation_refusal_correctness_support_no_regression": true
+  },
+  "extraction": {
+    "latency_by_artifact": {
+      "synthetic-text-default": {
+        "A": {
+          "runs_s": [
+            12.845365,
+            9.719169,
+            6.243404
+          ],
+          "median_s": 9.719169
+        },
+        "B": {
+          "runs_s": [
+            4.137326,
+            8.333896,
+            3.996005
+          ],
+          "median_s": 4.137326
+        },
+        "B_over_A": 0.4257
+      },
+      "synthetic-mixed-default": {
+        "A": {
+          "runs_s": [
+            3.329567,
+            6.163779,
+            2.408266
+          ],
+          "median_s": 3.329567
+        },
+        "B": {
+          "runs_s": [
+            4.886924,
+            5.178132,
+            4.820993
+          ],
+          "median_s": 4.886924
+        },
+        "B_over_A": 1.4677
+      },
+      "synthetic-mixed-override-3": {
+        "A": {
+          "runs_s": [
+            2.715574,
+            4.031507,
+            2.094716
+          ],
+          "median_s": 2.715574
+        },
+        "B": {
+          "runs_s": [
+            4.701524,
+            4.736669,
+            4.355166
+          ],
+          "median_s": 4.701524
+        },
+        "B_over_A": 1.7313
+      },
+      "real-text-default": {
+        "A": {
+          "runs_s": [
+            6.667275,
+            7.667428,
+            6.337024
+          ],
+          "median_s": 6.667275
+        },
+        "B": {
+          "runs_s": [
+            3.247395,
+            2.49506,
+            2.559429
+          ],
+          "median_s": 2.559429
+        },
+        "B_over_A": 0.3839
+      },
+      "real-mixed-override-1-2": {
+        "A": {
+          "runs_s": [
+            2.822192,
+            3.397773,
+            2.278048
+          ],
+          "median_s": 2.822192
+        },
+        "B": {
+          "runs_s": [
+            4.700102,
+            4.51148,
+            4.378953
+          ],
+          "median_s": 4.51148
+        },
+        "B_over_A": 1.5986
+      }
+    },
+    "sum_of_artifact_medians_s": {
+      "A": 25.253777,
+      "B": 20.796683
+    },
+    "unique_declared_artifact_ocr_pages": {
+      "A": 21,
+      "B": 9
+    },
+    "case_weighted_ocr_pages": {
+      "A": 30,
+      "B": 9
+    },
+    "route_correctness": {
+      "A": {
+        "numerator": 6,
+        "denominator": 19,
+        "skipped": 0,
+        "failures": 13
+      },
+      "B": {
+        "numerator": 19,
+        "denominator": 19,
+        "skipped": 0,
+        "failures": 0
+      }
+    },
+    "output_hashes_three_runs": {
+      "A": [
+        "906ff56ba6c28d9c4b05b537367edb15c71430e677c4ffaf59a8fc956eacfbd6",
+        "906ff56ba6c28d9c4b05b537367edb15c71430e677c4ffaf59a8fc956eacfbd6",
+        "906ff56ba6c28d9c4b05b537367edb15c71430e677c4ffaf59a8fc956eacfbd6"
+      ],
+      "B": [
+        "0ef59eb682680d136983a4a1fece0d7722e03087bf6b04b36c84795dd9cc63bf",
+        "0ef59eb682680d136983a4a1fece0d7722e03087bf6b04b36c84795dd9cc63bf",
+        "0ef59eb682680d136983a4a1fece0d7722e03087bf6b04b36c84795dd9cc63bf"
+      ]
+    },
+    "errors": {
+      "A": 0,
+      "B": 0
+    }
+  },
+  "qa": {
+    "A": {
+      "status": "fail",
+      "route_correctness": {
+        "numerator": 6,
+        "denominator": 19,
+        "skipped": 0,
+        "failures": 13
+      },
+      "source_recall": {
+        "numerator": 7,
+        "denominator": 11,
+        "skipped": 0,
+        "failures": 4
+      },
+      "citation_validity": {
+        "numerator": 12,
+        "denominator": 12,
+        "skipped": 0,
+        "failures": 0
+      },
+      "human_correctness": {
+        "numerator": 19,
+        "denominator": 12,
+        "skipped": 0,
+        "failures": 0
+      },
+      "claim_support": {
+        "numerator": 18,
+        "denominator": 12,
+        "skipped": 0,
+        "failures": 0
+      },
+      "false_refusal": {
+        "numerator": 2,
+        "denominator": 9,
+        "skipped": 0,
+        "failures": 2
+      },
+      "correct_refusal": {
+        "numerator": 3,
+        "denominator": 3,
+        "skipped": 0,
+        "failures": 0
+      },
+      "uncached_ingestion_latency": {
+        "numerator": 37.86944004194811,
+        "denominator": 7,
+        "skipped": 0,
+        "failures": 0
+      },
+      "warmed_qa_latency": {
+        "numerator": 59.16771945861789,
+        "denominator": 7,
+        "skipped": 0,
+        "failures": 0
+      },
+      "ocr_pages_processed": {
+        "numerator": 30.0,
+        "denominator": 7,
+        "skipped": 0,
+        "failures": 0
+      },
+      "llm_calls": {
+        "numerator": 28.0,
+        "denominator": 7,
+        "skipped": 0,
+        "failures": 0
+      },
+      "tool_steps": {
+        "numerator": 0.0,
+        "denominator": 7,
+        "skipped": 0,
+        "failures": 0
+      },
+      "timeouts": {
+        "numerator": 0,
+        "denominator": 7,
+        "skipped": 0,
+        "failures": 0
+      },
+      "errors": {
+        "numerator": 0,
+        "denominator": 7,
+        "skipped": 0,
+        "failures": 0
+      },
+      "acceptance_readiness": {
+        "numerator": 4,
+        "denominator": 4,
+        "skipped": 0,
+        "failures": 0
+      }
+    },
+    "B": {
+      "status": "fail",
+      "route_correctness": {
+        "numerator": 19,
+        "denominator": 19,
+        "skipped": 0,
+        "failures": 0
+      },
+      "source_recall": {
+        "numerator": 7,
+        "denominator": 11,
+        "skipped": 0,
+        "failures": 4
+      },
+      "citation_validity": {
+        "numerator": 12,
+        "denominator": 12,
+        "skipped": 0,
+        "failures": 0
+      },
+      "human_correctness": {
+        "numerator": 19,
+        "denominator": 12,
+        "skipped": 0,
+        "failures": 0
+      },
+      "claim_support": {
+        "numerator": 18,
+        "denominator": 12,
+        "skipped": 0,
+        "failures": 0
+      },
+      "false_refusal": {
+        "numerator": 2,
+        "denominator": 9,
+        "skipped": 0,
+        "failures": 2
+      },
+      "correct_refusal": {
+        "numerator": 3,
+        "denominator": 3,
+        "skipped": 0,
+        "failures": 0
+      },
+      "uncached_ingestion_latency": {
+        "numerator": 35.35258091567084,
+        "denominator": 7,
+        "skipped": 0,
+        "failures": 0
+      },
+      "warmed_qa_latency": {
+        "numerator": 64.72781308903359,
+        "denominator": 7,
+        "skipped": 0,
+        "failures": 0
+      },
+      "ocr_pages_processed": {
+        "numerator": 9.0,
+        "denominator": 7,
+        "skipped": 0,
+        "failures": 0
+      },
+      "llm_calls": {
+        "numerator": 28.0,
+        "denominator": 7,
+        "skipped": 0,
+        "failures": 0
+      },
+      "tool_steps": {
+        "numerator": 0.0,
+        "denominator": 7,
+        "skipped": 0,
+        "failures": 0
+      },
+      "timeouts": {
+        "numerator": 0,
+        "denominator": 7,
+        "skipped": 0,
+        "failures": 0
+      },
+      "errors": {
+        "numerator": 0,
+        "denominator": 7,
+        "skipped": 0,
+        "failures": 0
+      },
+      "acceptance_readiness": {
+        "numerator": 4,
+        "denominator": 4,
+        "skipped": 0,
+        "failures": 0
+      }
+    },
+    "question_receipts_A": [
+      {
+        "case_id": "tuning-text-and-lexical",
+        "question_id": "q-definition",
+        "answer_sha256": "211f97b9551d4b8282e18714cba5e46ab5033a849f46a63a9a3025ccce0f902e",
+        "source_pages": [
+          1
+        ],
+        "refused": false,
+        "human_correctness": 2,
+        "claim_support": 2,
+        "llm_calls": 2,
+        "latency_s": 8.328084,
+        "error": null
+      },
+      {
+        "case_id": "tuning-text-and-lexical",
+        "question_id": "q-similar-words",
+        "answer_sha256": "628029f269c0caecde0254c9225fa2280e24b422d0147d031b1b4a3f984b1fbb",
+        "source_pages": [
+          1
+        ],
+        "refused": false,
+        "human_correctness": 2,
+        "claim_support": 1,
+        "llm_calls": 2,
+        "latency_s": 2.218227,
+        "error": null
+      },
+      {
+        "case_id": "tuning-scan-and-noise",
+        "question_id": "q-scanned-fact",
+        "answer_sha256": "f8e21af5e669d6b69b96cb1718ac65ce139c18a32505d1a0f26a2b54e28723b1",
+        "source_pages": [
+          1
+        ],
+        "refused": false,
+        "human_correctness": 2,
+        "claim_support": 2,
+        "llm_calls": 2,
+        "latency_s": 3.187462,
+        "error": null
+      },
+      {
+        "case_id": "tuning-scan-and-noise",
+        "question_id": "q-noisy-fact",
+        "answer_sha256": "948f445bcd88a45de23dee2b97bc3f717c31895c76f4d5ba8525a0ad9dde86ef",
+        "source_pages": [
+          2
+        ],
+        "refused": false,
+        "human_correctness": 2,
+        "claim_support": 2,
+        "llm_calls": 2,
+        "latency_s": 2.644748,
+        "error": null
+      },
+      {
+        "case_id": "tuning-mixed-and-sparse",
+        "question_id": "q-mixed-page",
+        "answer_sha256": "881419ab0e12220ff9eb4141e8f07db10cd4798192842fc3d6d37a3ebecff882",
+        "source_pages": [
+          3
+        ],
+        "refused": false,
+        "human_correctness": 2,
+        "claim_support": 2,
+        "llm_calls": 2,
+        "latency_s": 3.313558,
+        "error": null
+      },
+      {
+        "case_id": "tuning-mixed-and-sparse",
+        "question_id": "q-alternating-scan",
+        "answer_sha256": "a337cdb6341116952d4d871bdd368539b3b7f6d452fe8e2db3c52b28d96e042a",
+        "source_pages": [
+          4
+        ],
+        "refused": false,
+        "human_correctness": 2,
+        "claim_support": 2,
+        "llm_calls": 2,
+        "latency_s": 2.232834,
+        "error": null
+      },
+      {
+        "case_id": "tuning-mixed-and-sparse",
+        "question_id": "q-sparse-refusal",
+        "answer_sha256": "04deadef76dbf21f0b936afd452ef20b56138fdf610eebfd8f4f0e5ef9051979",
+        "source_pages": [],
+        "refused": true,
+        "human_correctness": 2,
+        "claim_support": 2,
+        "llm_calls": 3,
+        "latency_s": 2.932331,
+        "error": null
+      },
+      {
+        "case_id": "acceptance-multipage",
+        "question_id": "q-multi-page",
+        "answer_sha256": "a51b4c1f1667692bdf63ce636967d6bb4075184efe88eb481c5656c910f8c978",
+        "source_pages": [
+          5,
+          6
+        ],
+        "refused": false,
+        "human_correctness": 1,
+        "claim_support": 1,
+        "llm_calls": 2,
+        "latency_s": 17.406136,
+        "error": null
+      },
+      {
+        "case_id": "acceptance-multipage",
+        "question_id": "q-ambiguous-refusal",
+        "answer_sha256": "04deadef76dbf21f0b936afd452ef20b56138fdf610eebfd8f4f0e5ef9051979",
+        "source_pages": [],
+        "refused": true,
+        "human_correctness": 2,
+        "claim_support": 2,
+        "llm_calls": 4,
+        "latency_s": 32.367713,
+        "error": null
+      },
+      {
+        "case_id": "acceptance-similar-words",
+        "question_id": "q-similar-but-absent",
+        "answer_sha256": "04deadef76dbf21f0b936afd452ef20b56138fdf610eebfd8f4f0e5ef9051979",
+        "source_pages": [],
+        "refused": true,
+        "human_correctness": 2,
+        "claim_support": 2,
+        "llm_calls": 2,
+        "latency_s": 2.743774,
+        "error": null
+      },
+      {
+        "case_id": "acceptance-mixed-default",
+        "question_id": "q-mixed-acceptance",
+        "answer_sha256": "04deadef76dbf21f0b936afd452ef20b56138fdf610eebfd8f4f0e5ef9051979",
+        "source_pages": [],
+        "refused": true,
+        "human_correctness": 0,
+        "claim_support": 0,
+        "llm_calls": 3,
+        "latency_s": 14.757248,
+        "error": null
+      },
+      {
+        "case_id": "acceptance-mixed-visual-override",
+        "question_id": "q-chart-values",
+        "answer_sha256": "04deadef76dbf21f0b936afd452ef20b56138fdf610eebfd8f4f0e5ef9051979",
+        "source_pages": [],
+        "refused": true,
+        "human_correctness": 0,
+        "claim_support": 0,
+        "llm_calls": 2,
+        "latency_s": 5.764271,
+        "error": null
+      }
+    ],
+    "question_receipts_B": [
+      {
+        "case_id": "tuning-text-and-lexical",
+        "question_id": "q-definition",
+        "answer_sha256": "211f97b9551d4b8282e18714cba5e46ab5033a849f46a63a9a3025ccce0f902e",
+        "source_pages": [
+          1
+        ],
+        "refused": false,
+        "human_correctness": 2,
+        "claim_support": 2,
+        "llm_calls": 2,
+        "latency_s": 1.591358,
+        "error": null
+      },
+      {
+        "case_id": "tuning-text-and-lexical",
+        "question_id": "q-similar-words",
+        "answer_sha256": "628029f269c0caecde0254c9225fa2280e24b422d0147d031b1b4a3f984b1fbb",
+        "source_pages": [
+          1
+        ],
+        "refused": false,
+        "human_correctness": 2,
+        "claim_support": 1,
+        "llm_calls": 2,
+        "latency_s": 3.216069,
+        "error": null
+      },
+      {
+        "case_id": "tuning-scan-and-noise",
+        "question_id": "q-scanned-fact",
+        "answer_sha256": "f8e21af5e669d6b69b96cb1718ac65ce139c18a32505d1a0f26a2b54e28723b1",
+        "source_pages": [
+          1
+        ],
+        "refused": false,
+        "human_correctness": 2,
+        "claim_support": 2,
+        "llm_calls": 2,
+        "latency_s": 2.325699,
+        "error": null
+      },
+      {
+        "case_id": "tuning-scan-and-noise",
+        "question_id": "q-noisy-fact",
+        "answer_sha256": "948f445bcd88a45de23dee2b97bc3f717c31895c76f4d5ba8525a0ad9dde86ef",
+        "source_pages": [
+          2
+        ],
+        "refused": false,
+        "human_correctness": 2,
+        "claim_support": 2,
+        "llm_calls": 2,
+        "latency_s": 3.432769,
+        "error": null
+      },
+      {
+        "case_id": "tuning-mixed-and-sparse",
+        "question_id": "q-mixed-page",
+        "answer_sha256": "881419ab0e12220ff9eb4141e8f07db10cd4798192842fc3d6d37a3ebecff882",
+        "source_pages": [
+          3
+        ],
+        "refused": false,
+        "human_correctness": 2,
+        "claim_support": 2,
+        "llm_calls": 2,
+        "latency_s": 2.528646,
+        "error": null
+      },
+      {
+        "case_id": "tuning-mixed-and-sparse",
+        "question_id": "q-alternating-scan",
+        "answer_sha256": "a337cdb6341116952d4d871bdd368539b3b7f6d452fe8e2db3c52b28d96e042a",
+        "source_pages": [
+          4
+        ],
+        "refused": false,
+        "human_correctness": 2,
+        "claim_support": 2,
+        "llm_calls": 2,
+        "latency_s": 3.008954,
+        "error": null
+      },
+      {
+        "case_id": "tuning-mixed-and-sparse",
+        "question_id": "q-sparse-refusal",
+        "answer_sha256": "04deadef76dbf21f0b936afd452ef20b56138fdf610eebfd8f4f0e5ef9051979",
+        "source_pages": [],
+        "refused": true,
+        "human_correctness": 2,
+        "claim_support": 2,
+        "llm_calls": 3,
+        "latency_s": 2.055899,
+        "error": null
+      },
+      {
+        "case_id": "acceptance-multipage",
+        "question_id": "q-multi-page",
+        "answer_sha256": "a51b4c1f1667692bdf63ce636967d6bb4075184efe88eb481c5656c910f8c978",
+        "source_pages": [
+          5,
+          6
+        ],
+        "refused": false,
+        "human_correctness": 1,
+        "claim_support": 1,
+        "llm_calls": 2,
+        "latency_s": 29.019573,
+        "error": null
+      },
+      {
+        "case_id": "acceptance-multipage",
+        "question_id": "q-ambiguous-refusal",
+        "answer_sha256": "04deadef76dbf21f0b936afd452ef20b56138fdf610eebfd8f4f0e5ef9051979",
+        "source_pages": [],
+        "refused": true,
+        "human_correctness": 2,
+        "claim_support": 2,
+        "llm_calls": 4,
+        "latency_s": 4.115237,
+        "error": null
+      },
+      {
+        "case_id": "acceptance-similar-words",
+        "question_id": "q-similar-but-absent",
+        "answer_sha256": "04deadef76dbf21f0b936afd452ef20b56138fdf610eebfd8f4f0e5ef9051979",
+        "source_pages": [],
+        "refused": true,
+        "human_correctness": 2,
+        "claim_support": 2,
+        "llm_calls": 2,
+        "latency_s": 24.959032,
+        "error": null
+      },
+      {
+        "case_id": "acceptance-mixed-default",
+        "question_id": "q-mixed-acceptance",
+        "answer_sha256": "04deadef76dbf21f0b936afd452ef20b56138fdf610eebfd8f4f0e5ef9051979",
+        "source_pages": [],
+        "refused": true,
+        "human_correctness": 0,
+        "claim_support": 0,
+        "llm_calls": 3,
+        "latency_s": 6.26487,
+        "error": null
+      },
+      {
+        "case_id": "acceptance-mixed-visual-override",
+        "question_id": "q-chart-values",
+        "answer_sha256": "04deadef76dbf21f0b936afd452ef20b56138fdf610eebfd8f4f0e5ef9051979",
+        "source_pages": [],
+        "refused": true,
+        "human_correctness": 0,
+        "claim_support": 0,
+        "llm_calls": 2,
+        "latency_s": 9.122392,
+        "error": null
+      }
+    ],
+    "grading": "manual 0-2 against manifest reference answers; not independently blinded"
+  },
+  "method_notes": [
+    "The first pilot coupled a text-only question to full-page OCR override and exposed a B-only rewrite-contract error. Before the decision, the case was split into default-text and visual-override conditions so OCR is applied only where raster evidence is requested.",
+    "Because that split followed pilot output, this is not a pristine untouched held-out estimate; the report treats QA as regression evidence, not an absolute quality claim.",
+    "Raw extracted text and PDFs remain local and are not included in this receipt."
+  ],
+  "decision": {
+    "verdict": "PROMOTE_B_EXTRACTION",
+    "allow_wave_4_agent_experiment": true,
+    "confidence": "moderate",
+    "limitations": [
+      "fixed retrieval still misses adjacent page 7",
+      "fixed retrieval refuses the mixed-page wording",
+      "OcrMac does not recover chart numeric labels in the real mixed PDF",
+      "manual OCR override remains required for meaningful same-page raster content"
+    ]
+  }
+}

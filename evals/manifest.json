@@ -293,11 +293,45 @@
       ]
     },
     {
-      "id": "acceptance-mixed",
+      "id": "acceptance-mixed-default",
       "split": "acceptance",
       "categories": [
         "same_page_text_raster",
         "alternating_mixed_pages"
+      ],
+      "document_id": "real-acceptance-mixed",
+      "ocr_pages": [],
+      "extraction": [
+        {
+          "page": 1,
+          "route": "docling_text",
+          "status": "ok"
+        },
+        {
+          "page": 2,
+          "route": "docling_text",
+          "status": "ok"
+        }
+      ],
+      "questions": [
+        {
+          "id": "q-mixed-acceptance",
+          "text": "Какие три способа размещения столбиков перечислены в тексте?",
+          "answerable": true,
+          "reference_answer": "На одинаковом расстоянии друг от друга, вплотную друг к другу и с частичным наложением друг на друга.",
+          "source_page_sets": [
+            [
+              1
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "id": "acceptance-mixed-visual-override",
+      "split": "acceptance",
+      "categories": [
+        "same_page_text_raster"
       ],
       "document_id": "real-acceptance-mixed",
       "ocr_pages": [
@@ -317,17 +351,6 @@
         }
       ],
       "questions": [
-        {
-          "id": "q-mixed-acceptance",
-          "text": "Какие три способа размещения столбиков перечислены в тексте?",
-          "answerable": true,
-          "reference_answer": "На одинаковом расстоянии друг от друга, вплотную друг к другу и с частичным наложением друг на друга.",
-          "source_page_sets": [
-            [
-              1
-            ]
-          ]
-        },
         {
           "id": "q-chart-values",
           "text": "Какие значения выпуска книг и брошюр указаны за 1995, 1996 и 1997 годы на рисунке 8?",

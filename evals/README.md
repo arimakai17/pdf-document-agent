@@ -25,7 +25,10 @@ SHA-256, а локальный запуск связывает их с путя�
 
 Каждый case задаёт категории, полный текст вопросов, reference answer для
 ручной blind-разметки, expected per-page `route` и `status`, а также явный
-`ocr_pages` для manual overrides этого запуска.
+`ocr_pages` для manual overrides этого запуска. Вопросы, требующие только
+цифровой текст mixed PDF, и вопросы к raster-графику находятся в разных cases:
+это не позволяет ненужному full-page OCR менять text-only retrieval и отдельно
+измеряет полезность override.
 Допустимые routes: `docling_text`, `docling_ocr`; статусы:
 `ok`, `empty`, `failed`. Для answerable вопроса `source_page_sets` содержит
 один или несколько непустых допустимых наборов страниц. Evaluator выбирает
