@@ -2,7 +2,12 @@ from pathlib import Path
 from dataclasses import dataclass
 
 import pytest
-from docling.datamodel.base_models import InputFormat
+from docling.datamodel.base_models import (
+    ConversionStatus,
+    DoclingComponentType,
+    ErrorItem,
+    InputFormat,
+)
 from docling.datamodel.pipeline_options import OcrMacOptions, ThreadedPdfPipelineOptions
 from docling_core.types.doc import BoundingBox, CoordOrigin, ProvenanceItem, Size
 
@@ -53,8 +58,25 @@ class FakeDocument:
 
 
 class FakeConversionResult:
-    def __init__(self, document: FakeDocument) -> None:
+    def __init__(
+        self,
+        document: FakeDocument,
+        *,
+        status: ConversionStatus = ConversionStatus.SUCCESS,
+        errors: list[ErrorItem] | None = None,
+    ) -> None:
         self.document = document
+        self.status = status
+        self.errors = errors or []
+
+
+def _conversion_error(message: str, page_no: int | None = None) -> ErrorItem:
+    return ErrorItem(
+        component_type=DoclingComponentType.PIPELINE,
+        module_name="fake.pipeline",
+        error_message=message,
+        page_no=page_no,
+    )
 
 
 class FakeConverter:
@@ -307,8 +329,10 @@ class _AdaptiveConverter:
         options = type(self).init_options[-1]
         key = (bool(options.do_ocr), page_range)
         type(self).convert_calls.append(key)
-        document = type(self).documents[key]
-        return FakeConversionResult(document)
+        result = type(self).documents[key]
+        if isinstance(result, FakeConversionResult):
+            return result
+        return FakeConversionResult(result)
 
 
 def _patch_adaptive_converter(monkeypatch, documents):
@@ -418,6 +442,127 @@ def test_scan_ocr_is_selective_and_preserves_source_page(tmp_path, monkeypatch) 
     assert isinstance(_AdaptiveConverter.init_options[1].ocr_options, OcrMacOptions)
     assert _AdaptiveConverter.init_options[1].ocr_options.mode.value == "full_page"
     assert _AdaptiveConverter.init_options[1].ocr_options.lang == ["ru-RU", "en-US"]
+
+
+def test_first_pass_partial_page_error_is_failed_placeholder(tmp_path, monkeypatch) -> None:
+    pdf_path = tmp_path / "partial-first-pass.pdf"
+    pdf_path.write_bytes(b"%PDF")
+    first = _text_document({1: "", 2: "usable text on the second page"})
+    result = FakeConversionResult(
+        first,
+        status=ConversionStatus.PARTIAL_SUCCESS,
+        errors=[_conversion_error("page backend failed", page_no=1)],
+    )
+    _patch_adaptive_converter(monkeypatch, {(False, None): result})
+
+    extracted = extractor.extract_pdf(pdf_path)
+
+    assert extracted.pages[0].status == "failed"
+    assert extracted.pages[0].markdown == ""
+    assert extracted.pages[0].diagnostic
+    assert "page backend failed" in extracted.pages[0].diagnostic
+    assert any("page backend failed" in warning for warning in extracted.warnings)
+    assert extracted.pages[1].status == "ok"
+
+
+def test_first_pass_partial_page_error_preserves_usable_text_with_warning(
+    tmp_path, monkeypatch
+) -> None:
+    pdf_path = tmp_path / "usable-partial-first-pass.pdf"
+    pdf_path.write_bytes(b"%PDF")
+    original = "usable meaningful text from a partial page"
+    first = _text_document({1: original})
+    result = FakeConversionResult(
+        first,
+        status=ConversionStatus.PARTIAL_SUCCESS,
+        errors=[_conversion_error("table component failed", page_no=1)],
+    )
+    _patch_adaptive_converter(monkeypatch, {(False, None): result})
+
+    extracted = extractor.extract_pdf(pdf_path)
+
+    page = extracted.pages[0]
+    assert page.status == "ok"
+    assert page.markdown == original
+    assert "partial" in page.reason
+    assert page.diagnostic
+    assert "table component failed" in page.diagnostic
+    assert any("table component failed" in warning for warning in extracted.warnings)
+
+
+def test_selective_ocr_partial_page_error_cannot_become_empty(
+    tmp_path, monkeypatch
+) -> None:
+    pdf_path = tmp_path / "partial-selective-ocr.pdf"
+    pdf_path.write_bytes(b"%PDF")
+    first = _text_document({1: ""})
+    ocr = FakeConversionResult(
+        _text_document({1: ""}),
+        status=ConversionStatus.PARTIAL_SUCCESS,
+        errors=[_conversion_error("OCR backend failed", page_no=1)],
+    )
+    _patch_adaptive_converter(
+        monkeypatch,
+        {(False, None): first, (True, (1, 1)): ocr},
+    )
+
+    extracted = extractor.extract_pdf(
+        pdf_path,
+        config=extractor.ExtractionConfig(ocr_pages=(1,)),
+    )
+
+    page = extracted.pages[0]
+    assert page.route == "docling_ocr"
+    assert page.status == "failed"
+    assert page.markdown == ""
+    assert page.diagnostic
+    assert "OCR backend failed" in page.diagnostic
+    assert any("OCR backend failed" in warning for warning in extracted.warnings)
+
+
+def test_document_scoped_partial_error_is_visible_without_failing_pages(
+    tmp_path, monkeypatch
+) -> None:
+    pdf_path = tmp_path / "document-partial-error.pdf"
+    pdf_path.write_bytes(b"%PDF")
+    first = FakeConversionResult(
+        _text_document({1: "usable text on page one", 2: ""}),
+        status=ConversionStatus.PARTIAL_SUCCESS,
+        errors=[_conversion_error("document assembly warning")],
+    )
+    _patch_adaptive_converter(monkeypatch, {(False, None): first})
+
+    extracted = extractor.extract_pdf(pdf_path)
+
+    assert [page.status for page in extracted.pages] == ["ok", "empty"]
+    assert any("document assembly warning" in warning for warning in extracted.warnings)
+    assert all(not warning.startswith("Page ") for warning in extracted.warnings)
+
+
+def test_partial_first_pass_page_with_raster_can_recover_through_ocr(
+    tmp_path, monkeypatch
+) -> None:
+    pdf_path = tmp_path / "recoverable-partial-page.pdf"
+    pdf_path.write_bytes(b"%PDF")
+    first = FakeConversionResult(
+        _text_document({1: ""}, [_picture(1)]),
+        status=ConversionStatus.PARTIAL_SUCCESS,
+        errors=[_conversion_error("first-pass raster warning", page_no=1)],
+    )
+    _patch_adaptive_converter(
+        monkeypatch,
+        {(False, None): first, (True, (1, 1)): _ocr_document(1, "recovered OCR text")},
+    )
+
+    extracted = extractor.extract_pdf(pdf_path)
+
+    page = extracted.pages[0]
+    assert page.route == "docling_ocr"
+    assert page.status == "ok"
+    assert page.markdown == "recovered OCR text"
+    assert "first-pass raster warning" in page.diagnostic
+    assert any("first-pass raster warning" in warning for warning in extracted.warnings)
+    assert _AdaptiveConverter.convert_calls == [(False, None), (True, (1, 1))]
 
 
 def test_alternating_routes_keep_order_and_replace_pages_atomically(tmp_path, monkeypatch) -> None:

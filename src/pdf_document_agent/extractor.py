@@ -30,6 +30,7 @@ _MARKDOWN_NOISE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 _MAX_MANUAL_OCR_PAGES = 1_000
+_MAX_DIAGNOSTIC_LENGTH = 300
 
 
 def parse_ocr_pages(value: str) -> tuple[int, ...]:
@@ -213,7 +214,11 @@ def extract_pdf(
     if not isinstance(config, ExtractionConfig):
         raise TypeError("config должен быть ExtractionConfig")
 
-    first_document = _convert_first_pass(source)
+    first_result = _convert_first_pass(source)
+    first_document = first_result.document
+    first_pass_page_diagnostics, document_diagnostics = _conversion_diagnostics(
+        first_result
+    )
     page_numbers = tuple(sorted(first_document.pages))
     page_count = len(page_numbers)
     if page_count == 0:
@@ -231,7 +236,9 @@ def extract_pdf(
     assembled_raster_areas = _picture_areas(first_document)
     embedded_raster_areas = _embedded_raster_areas(source, page_numbers)
     pages: dict[int, ExtractedPage] = {}
-    warnings: list[str] = []
+    warnings: list[str] = [
+        f"Document: {diagnostic}" for diagnostic in document_diagnostics
+    ]
     ocr_targets: dict[int, bool] = {}
     for page_number in page_numbers:
         page, should_ocr, significant_raster = _first_pass_page(
@@ -243,6 +250,7 @@ def extract_pdf(
                 assembled_raster_areas.get(page_number, 0.0),
                 embedded_raster_areas.get(page_number, 0.0),
             ),
+            conversion_diagnostic=first_pass_page_diagnostics.get(page_number),
         )
         pages[page_number] = page
         if page.diagnostic:
@@ -262,7 +270,7 @@ def extract_pdf(
                 warnings.append(f"Page {page_number}: {diagnostic}")
         else:
             for page_number, significant_raster in ocr_targets.items():
-                replacement, warning = _extract_ocr_page(
+                replacement, ocr_warnings = _extract_ocr_page(
                     ocr_converter,
                     source,
                     page_number,
@@ -270,8 +278,13 @@ def extract_pdf(
                     significant_raster=significant_raster,
                 )
                 pages[page_number] = replacement
-                if warning:
-                    warnings.append(f"Page {page_number}: {warning}")
+                for warning in ocr_warnings:
+                    if warning not in warnings:
+                        warnings.append(warning)
+
+    for page_number, diagnostic in first_pass_page_diagnostics.items():
+        if page_number not in pages:
+            warnings.append(f"Page {page_number}: {diagnostic}")
 
     final_pages = tuple(pages[page_number] for page_number in page_numbers)
     markdown = "\n\n".join(
@@ -296,11 +309,62 @@ def _convert_first_pass(source: Path):
                 InputFormat.PDF: PdfFormatOption(pipeline_options=options),
             }
         )
-        return converter.convert(source).document
+        result = converter.convert(source)
+        result.document
+        return result
     except Exception as error:
         raise PdfExtractionError(
             f"Не удалось обработать PDF «{source.name}»."
         ) from error
+
+
+def _conversion_diagnostics(result) -> tuple[dict[int, str], tuple[str, ...]]:
+    page_diagnostics: dict[int, list[str]] = {}
+    document_diagnostics: list[str] = []
+    for error in getattr(result, "errors", ()) or ():
+        diagnostic = _docling_error_diagnostic(error)
+        page_number = getattr(error, "page_no", None)
+        if page_number is None:
+            document_diagnostics.append(diagnostic)
+        else:
+            page_diagnostics.setdefault(int(page_number), []).append(diagnostic)
+    return (
+        {
+            page_number: _join_diagnostics(diagnostics)
+            for page_number, diagnostics in page_diagnostics.items()
+        },
+        tuple(document_diagnostics),
+    )
+
+
+def _docling_error_diagnostic(error) -> str:
+    message = _bounded_diagnostic(getattr(error, "error_message", ""))
+    component = _bounded_diagnostic(
+        getattr(getattr(error, "component_type", None), "value", "")
+    )
+    module = _bounded_diagnostic(getattr(error, "module_name", ""))
+    category = _bounded_diagnostic(
+        getattr(getattr(error, "category", None), "value", "")
+    )
+    context = "/".join(value for value in (component, module, category) if value)
+    diagnostic = "Docling conversion error"
+    if message:
+        diagnostic += f": {message}"
+    if context:
+        diagnostic += f" ({context})"
+    return _bounded_diagnostic(diagnostic)
+
+
+def _join_diagnostics(diagnostics: list[str]) -> str:
+    unique = list(dict.fromkeys(diagnostic for diagnostic in diagnostics if diagnostic))
+    return _bounded_diagnostic("; ".join(unique))
+
+
+def _bounded_diagnostic(value: object) -> str:
+    text = str(value) if value is not None else ""
+    text = "".join(character if character.isprintable() else " " for character in text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text[:_MAX_DIAGNOSTIC_LENGTH]
 
 
 def _first_pass_page(
@@ -310,6 +374,7 @@ def _first_pass_page(
     *,
     regions: tuple[TextRegion, ...] = (),
     raster_area: float = 0.0,
+    conversion_diagnostic: str | None = None,
 ) -> tuple[ExtractedPage, bool, bool]:
     try:
         page_object = document.pages[page_number]
@@ -335,7 +400,7 @@ def _first_pass_page(
                 route="docling_text",
                 status="failed",
                 reason="first-pass page unavailable",
-                diagnostic=str(error),
+                diagnostic=_bounded_diagnostic(str(error)) or type(error).__name__,
             ),
             False,
             False,
@@ -345,6 +410,9 @@ def _first_pass_page(
     significant_raster = raster_area >= config.significant_raster_area
     if manual_override:
         reason = "manual OCR override"
+        should_ocr = True
+    elif conversion_diagnostic and significant_raster:
+        reason = "first-pass partial conversion; significant raster detected"
         should_ocr = True
     elif text_sufficient:
         should_ocr = False
@@ -362,14 +430,21 @@ def _first_pass_page(
         should_ocr = False
         reason = "meaningful text gate failed; no significant raster"
 
+    if conversion_diagnostic:
+        status = "ok" if meaningful_chars else "failed"
+        reason = f"first-pass partial conversion; {reason}"
+    else:
+        status = "ok" if meaningful_chars else "empty"
+
     return (
         ExtractedPage(
             number=page_number,
             markdown=markdown,
             regions=regions,
             route="docling_text",
-            status="ok" if meaningful_chars else "empty",
+            status=status,
             reason=reason,
+            diagnostic=conversion_diagnostic,
         ),
         should_ocr,
         significant_raster,
@@ -399,18 +474,33 @@ def _extract_ocr_page(
     *,
     significant_raster: bool,
 ):
+    page_diagnostic: str | None = None
+    document_diagnostics: tuple[str, ...] = ()
     try:
-        document = converter.convert(
-            source, page_range=(page_number, page_number)
-        ).document
+        result = converter.convert(source, page_range=(page_number, page_number))
+        document = result.document
+        page_diagnostics, document_diagnostics = _conversion_diagnostics(result)
+        page_diagnostic = page_diagnostics.get(page_number)
         _validate_selective_result(document, page_number)
         markdown = _export_page_markdown(document, page_number)
         regions = tuple(_collect_text_regions(document).get(page_number, ()))
         meaningful_chars, _meaningful_words_count = _meaningful_metrics(markdown)
         if not meaningful_chars:
             if _meaningful_metrics(first_page.markdown)[0]:
-                raise ValueError("OCR page has no usable text")
-            if not significant_raster:
+                diagnostic = _join_diagnostics(
+                    [
+                        value
+                        for value in (first_page.diagnostic, page_diagnostic)
+                        if value
+                    ]
+                )
+                if not page_diagnostic:
+                    diagnostic = _bounded_diagnostic("OCR page has no usable text")
+                return (
+                    _failed_ocr_page(first_page, diagnostic),
+                    _ocr_warnings(page_number, page_diagnostic, document_diagnostics),
+                )
+            if not page_diagnostic and not significant_raster:
                 return (
                     ExtractedPage(
                         number=page_number,
@@ -420,7 +510,7 @@ def _extract_ocr_page(
                         status="empty",
                         reason="selective OCR found no text on blank page",
                     ),
-                    None,
+                    _ocr_warnings(page_number, None, document_diagnostics),
                 )
             raise ValueError("OCR page has no usable text")
         if not regions:
@@ -432,17 +522,42 @@ def _extract_ocr_page(
                 regions=regions,
                 route="docling_ocr",
                 status="ok",
-                reason="selective OCR",
+                reason=(
+                    "selective OCR; partial conversion"
+                    if page_diagnostic
+                    else "selective OCR"
+                ),
+                diagnostic=page_diagnostic or first_page.diagnostic,
             ),
-            None,
+            _ocr_warnings(page_number, page_diagnostic, document_diagnostics),
         )
     except Exception as error:
-        diagnostic = str(error) or type(error).__name__
+        diagnostic = _bounded_diagnostic(str(error)) or type(error).__name__
+        diagnostic = _join_diagnostics(
+            [value for value in (page_diagnostic, diagnostic) if value]
+        )
         replacement = _failed_ocr_page(first_page, diagnostic)
-        return replacement, diagnostic
+        return replacement, _ocr_warnings(
+            page_number, diagnostic, document_diagnostics
+        )
+
+
+def _ocr_warnings(
+    page_number: int,
+    page_diagnostic: str | None,
+    document_diagnostics: tuple[str, ...],
+) -> tuple[str, ...]:
+    warnings = []
+    if page_diagnostic:
+        warnings.append(f"Page {page_number}: {page_diagnostic}")
+    warnings.extend(f"Document: {diagnostic}" for diagnostic in document_diagnostics)
+    return tuple(warnings)
 
 
 def _failed_ocr_page(first_page: ExtractedPage, diagnostic: str) -> ExtractedPage:
+    diagnostic = _join_diagnostics(
+        [value for value in (first_page.diagnostic, diagnostic) if value]
+    )
     if _meaningful_metrics(first_page.markdown)[0]:
         return ExtractedPage(
             number=first_page.number,
