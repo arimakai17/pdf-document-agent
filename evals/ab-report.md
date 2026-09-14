@@ -102,9 +102,9 @@ Preservation checks:
 - no extraction error, timeout, page renumbering or warning occurred.
 
 Trade-off: B is materially faster on text PDFs but 1.47–1.73× slower on mixed
-PDFs because it pays for a no-OCR pass and separate selective calls. This is
-accepted because it remains below the declared 2× bound and removes unnecessary
-OCR from ordinary text documents.
+PDFs because it pays for a no-OCR pass and separate selective calls. This
+latency sub-gate remains below the declared 2× bound, but it does not override
+the failed OCR-work gate or the overall HOLD verdict.
 
 ## Fixed QA evidence
 

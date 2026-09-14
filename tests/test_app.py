@@ -482,7 +482,7 @@ def test_empty_state_exposes_fixed_default_and_localized_ocr_control() -> None:
     assert not app.exception
     assert app.radio[0].value == "fixed"
     assert app.radio[0].options == [
-        "Фиксированный · кандидат B (HOLD; технический default в этой ветке)",
+        "Фиксированный · адаптивный B (кандидат/HOLD)",
         "Ограниченный агент · экспериментальный C",
     ]
     assert next(item for item in app.text_input if item.label == "Страницы для ручного OCR")
@@ -491,7 +491,7 @@ def test_empty_state_exposes_fixed_default_and_localized_ocr_control() -> None:
 
     assert app.radio[0].value == "fixed"
     assert app.radio[0].options == [
-        "Fixed · B candidate (HOLD; technical default in this branch)",
+        "Fixed · adaptive B (candidate/HOLD)",
         "Bounded-agent · experimental C",
     ]
     assert next(item for item in app.text_input if item.label == "Pages for manual OCR")

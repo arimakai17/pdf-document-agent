@@ -21,11 +21,11 @@ _COPY: Final[dict[Locale, dict[str, str]]] = {
         "settings": "Настройки модели",
         "model": "Модель Ollama",
         "answer_mode": "Режим ответа",
-        "answer_mode_fixed": "Фиксированный · кандидат B (HOLD; технический default в этой ветке)",
+        "answer_mode_fixed": "Фиксированный · адаптивный B (кандидат/HOLD)",
         "answer_mode_agent": "Ограниченный агент · экспериментальный C",
         "agent_experimental": (
-            "Экспериментальный bounded-agent C: кандидат/HOLD; фиксированный "
-            "B остаётся техническим default только в этой ветке; автоматического fallback нет."
+            "C — экспериментальный режим со статусом HOLD. В этой ветке фиксированный "
+            "B выбран по умолчанию, но A→B gate не пройден; автоматического fallback нет."
         ),
         "ocr_pages": "Страницы для ручного OCR",
         "ocr_pages_help": "Необязательно: номера и диапазоны через запятую, например 1, 3-5.",
@@ -102,11 +102,11 @@ _COPY: Final[dict[Locale, dict[str, str]]] = {
         "settings": "Model settings",
         "model": "Ollama model",
         "answer_mode": "Answer mode",
-        "answer_mode_fixed": "Fixed · B candidate (HOLD; technical default in this branch)",
+        "answer_mode_fixed": "Fixed · adaptive B (candidate/HOLD)",
         "answer_mode_agent": "Bounded-agent · experimental C",
         "agent_experimental": (
-            "Experimental bounded-agent C: candidate/HOLD; fixed B remains the "
-            "technical default only in this branch; there is no automatic fallback."
+            "C is experimental and on HOLD. Fixed B is selected by default in this "
+            "branch, but the A→B gate did not pass; there is no automatic fallback."
         ),
         "ocr_pages": "Pages for manual OCR",
         "ocr_pages_help": "Optional: comma-separated page numbers and ranges, for example 1, 3-5.",
