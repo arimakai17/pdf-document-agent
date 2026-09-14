@@ -3,7 +3,12 @@ import re
 from collections import Counter
 from dataclasses import dataclass
 
-from pdf_document_agent.extractor import ExtractedDocument, NormalizedBox, TextRegion
+from pdf_document_agent.extractor import (
+    ExtractedDocument,
+    NormalizedBox,
+    TextRegion,
+    remove_known_extraction_noise,
+)
 
 
 _WORD_PATTERN = re.compile(r"[^\W_]+(?:[-'][^\W_]+)*", re.UNICODE)
@@ -134,7 +139,8 @@ def chunk_document(
     chunks: list[TextChunk] = []
     for page in document.pages:
         regions = getattr(page, "regions", ())
-        for text in _split_text(page.markdown, max_chars, overlap_chars):
+        cleaned_text = remove_known_extraction_noise(page.markdown)
+        for text in _split_text(cleaned_text, max_chars, overlap_chars):
             chunk_regions = _regions_for_chunk(text, regions)
             chunks.append(
                 TextChunk(

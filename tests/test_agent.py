@@ -10,7 +10,7 @@ from pdf_document_agent.agent import (
 from pdf_document_agent.answering import INSUFFICIENT_ANSWER, AnswerGenerationError
 from pdf_document_agent.extractor import ExtractedDocument, ExtractedPage, TextRegion
 from pdf_document_agent.ollama import OllamaTimeoutError
-from pdf_document_agent.retrieval import TextChunk, chunk_document
+from pdf_document_agent.retrieval import TextChunk, chunk_document, search_chunks
 
 
 def make_document(*pages: str) -> tuple[ExtractedDocument, list[TextChunk]]:
@@ -203,6 +203,50 @@ def test_marker_only_search_result_is_not_evidence_or_final_context() -> None:
     assert run.answer.text == INSUFFICIENT_ANSWER
     assert run.final_evidence_packet == ()
     assert run.llm_calls == 2
+
+
+def test_standard_boundary_noise_is_cleaned_before_retrieval_authority() -> None:
+    useful_text = "Useful facts about Atlas V2 mention an image."
+    source = "\n\n".join(["<!-- image -->"] * 113) + "\n\n" + useful_text
+    box = (0.1, 0.2, 0.3, 0.4)
+    region = TextRegion(page_number=7, text=useful_text, box=box)
+    document = ExtractedDocument(
+        source_name="book.pdf",
+        markdown=source,
+        page_count=7,
+        pages=(ExtractedPage(number=7, markdown=source, regions=(region,)),),
+    )
+    chunks = chunk_document(document, max_chars=1800, overlap_chars=250)
+    search_results = search_chunks("image", chunks, top_k=2)
+    chat = scripted_chat(
+        [
+            '{"action":"search","query":"image","top_k":2}',
+            '{"action":"answer_ready"}',
+            f"{useful_text} [стр. 7].",
+        ]
+    )
+
+    run = run_agent("Где image?", document, chunks, chat=chat)
+
+    assert len(chunks) == 1
+    assert all(len(chunk.text) <= 1800 for chunk in chunks)
+    assert chunks[0].page_number == 7
+    assert useful_text in chunks[0].text
+    assert "<!--" not in chunks[0].text
+    assert "-->" not in chunks[0].text
+    assert chunks[0].boxes == (box,)
+    assert chunks[0].regions == (region,)
+    assert search_results
+    assert all("-->" not in result.chunk.text for result in search_results)
+    assert all(useful_text in result.chunk.text for result in search_results)
+    assert run.status == "ok"
+    assert run.answer.source_pages == (7,)
+    assert run.answer.sources[0].page_number == 7
+    assert run.answer.sources[0].boxes == (box,)
+    assert len(run.final_evidence_packet) == 1
+    assert run.final_evidence_packet[0].page_number == 7
+    assert run.final_evidence_packet[0].text == useful_text
+    assert "-->" not in run.final_evidence_packet[0].text
 
 
 @pytest.mark.parametrize(
