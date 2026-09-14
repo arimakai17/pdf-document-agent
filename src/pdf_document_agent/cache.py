@@ -29,7 +29,7 @@ from pdf_document_agent.extractor import (
 )
 from pdf_document_agent.retrieval import TextChunk
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 MAX_ENTRIES = 10
 _CACHE_DIR_ENV = "PDF_DOCUMENT_AGENT_CACHE_DIR"
 _FINGERPRINT_PATTERN = re.compile(r"^[0-9a-f]{64}$")

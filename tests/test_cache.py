@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 from dataclasses import replace
@@ -14,7 +15,14 @@ from pdf_document_agent.extractor import (
     ExtractionConfig,
     config_fingerprint,
 )
-from pdf_document_agent.retrieval import TextChunk
+from pdf_document_agent.retrieval import (
+    TextChunk,
+    _boxes_for_regions,
+    _regions_for_chunk,
+    _split_text,
+    search_chunks,
+)
+from pdf_document_agent.agent import run_agent
 
 _FINGERPRINT_A = "a" * 64
 _FINGERPRINT_B = "b" * 64
@@ -349,3 +357,126 @@ def test_prepare_pdf_recovers_from_corrupt_cache_entry(
     assert calls["extract"] == 1
     assert result == (doc, chunks)
     assert cache.get(content) is not None
+
+
+def test_prepare_pdf_invalidates_legacy_v2_chunks_before_retrieval(
+    cache_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    file_bytes = b"%PDF-1.4\nPDF Atlas V2 cache invalidation fixture\n"
+    fingerprint = config_fingerprint(DEFAULT_EXTRACTION_CONFIG)
+    useful_text = "Useful facts about Atlas V2 mention an image."
+    source = "\n\n".join(["<!-- image -->"] * 113) + "\n\n" + useful_text
+    box = (0.1, 0.2, 0.3, 0.4)
+    region = TextRegion(page_number=7, text=useful_text, box=box)
+    document = ExtractedDocument(
+        source_name="fixture.pdf",
+        markdown=source,
+        page_count=7,
+        pages=(
+            ExtractedPage(
+                number=7,
+                markdown=source,
+                regions=(region,),
+            ),
+        ),
+        config_fingerprint=fingerprint,
+    )
+
+    legacy_texts = _split_text(source, max_chars=1_800, overlap_chars=250)
+    assert len(legacy_texts) == 2
+    assert legacy_texts[1].startswith("-->")
+    legacy_chunks = []
+    for index, text in enumerate(legacy_texts):
+        chunk_regions = _regions_for_chunk(text, (region,))
+        legacy_chunks.append(
+            TextChunk(
+                index=index,
+                page_number=7,
+                text=text,
+                boxes=_boxes_for_regions(chunk_regions),
+                regions=chunk_regions,
+            )
+        )
+
+    # This is the v2 filename component explicitly: cache.cache_path() is
+    # intentionally not used because it follows the current schema.
+    legacy_path = cache.cache_dir() / (
+        f"{hashlib.sha256(file_bytes).hexdigest()}.2.{fingerprint}.json"
+    )
+    legacy_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 2,
+                "extraction_config_fingerprint": fingerprint,
+                "document": cache._document_to_dict(document),
+                "chunks": [cache._chunk_to_dict(chunk) for chunk in legacy_chunks],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    calls = {"extract": 0, "chunk": 0}
+    real_chunk_document = app.chunk_document
+
+    def controlled_extract(path, *, config):
+        calls["extract"] += 1
+        assert path.name == "fixture.pdf"
+        assert config is DEFAULT_EXTRACTION_CONFIG
+        return document
+
+    def counted_canonical_chunk(document):
+        calls["chunk"] += 1
+        return real_chunk_document(document)
+
+    monkeypatch.setattr(app, "extract_pdf", controlled_extract)
+    monkeypatch.setattr(app, "chunk_document", counted_canonical_chunk)
+
+    prepared_document, chunks = app.prepare_pdf(file_bytes, "fixture.pdf")
+
+    assert calls == {"extract": 1, "chunk": 1}
+    assert prepared_document == document
+    assert len(chunks) == 1
+    assert chunks[0].text == useful_text
+    assert "<!--" not in chunks[0].text
+    assert "-->" not in chunks[0].text
+    assert chunks[0].page_number == 7
+    assert chunks[0].boxes == (box,)
+    assert chunks[0].regions == (region,)
+
+    search_results = search_chunks("image", chunks, top_k=2)
+    assert len(search_results) == 1
+    assert search_results[0].chunk.text == useful_text
+    assert search_results[0].chunk.page_number == 7
+    assert search_results[0].chunk.boxes == (box,)
+    assert all("-->" not in result.chunk.text for result in search_results)
+
+    planner_outputs = [
+        '{"action":"search","query":"image","top_k":2}',
+        '{"action":"answer_ready"}',
+        f"{useful_text} [стр. 7].",
+    ]
+
+    def scripted_chat(*_args, **_kwargs):
+        return planner_outputs.pop(0)
+
+    run = run_agent("Где image?", prepared_document, chunks, chat=scripted_chat)
+
+    assert run.status == "ok"
+    assert run.answer.source_pages == (7,)
+    assert run.answer.sources[0].page_number == 7
+    assert run.answer.sources[0].excerpt == useful_text
+    assert run.answer.sources[0].boxes == (box,)
+    assert len(run.final_evidence_packet) == 1
+    assert run.final_evidence_packet[0].page_number == 7
+    assert run.final_evidence_packet[0].text == useful_text
+    assert "-->" not in run.final_evidence_packet[0].text
+
+    current_path = cache.cache_path(file_bytes, config_fingerprint=fingerprint)
+    assert current_path != legacy_path
+    assert legacy_path.exists()
+    assert cache.get(file_bytes, config_fingerprint=fingerprint) == (
+        prepared_document,
+        chunks,
+    )
+    assert json.loads(current_path.read_text(encoding="utf-8"))["schema_version"] == 3
