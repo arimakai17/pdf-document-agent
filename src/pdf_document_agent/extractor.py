@@ -29,6 +29,40 @@ _MARKDOWN_NOISE = re.compile(
     r"<!--.*?-->|!\[[^\]]*\]\([^)]*\)|<\/?(?:image|figure)[^>]*>",
     re.IGNORECASE | re.DOTALL,
 )
+_MAX_MANUAL_OCR_PAGES = 1_000
+
+
+def parse_ocr_pages(value: str) -> tuple[int, ...]:
+    """Разобрать список страниц для ручного OCR override."""
+    if not isinstance(value, str):
+        raise ValueError("ocr_pages должен быть строкой страниц")
+    if not value.strip():
+        return ()
+
+    pages: set[int] = set()
+    for component in value.split(","):
+        component = component.strip()
+        if not component:
+            raise ValueError("ocr_pages содержит пустой компонент")
+        match = re.fullmatch(r"([0-9]+)(?:\s*-\s*([0-9]+))?", component)
+        if match is None:
+            raise ValueError(f"Некорректный компонент ocr_pages: {component}")
+        start = int(match.group(1))
+        end = int(match.group(2) or start)
+        if start < 1 or end < 1:
+            raise ValueError("ocr_pages должен содержать только страницы >= 1")
+        if end < start:
+            raise ValueError("Диапазон ocr_pages должен быть возрастающим")
+        if end - start + 1 > _MAX_MANUAL_OCR_PAGES:
+            raise ValueError(
+                f"ocr_pages поддерживает не более {_MAX_MANUAL_OCR_PAGES} страниц"
+            )
+        pages.update(range(start, end + 1))
+        if len(pages) > _MAX_MANUAL_OCR_PAGES:
+            raise ValueError(
+                f"ocr_pages поддерживает не более {_MAX_MANUAL_OCR_PAGES} страниц"
+            )
+    return tuple(sorted(pages))
 
 
 @dataclass(frozen=True)

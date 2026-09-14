@@ -10,6 +10,37 @@ from pdf_document_agent.eval_fixtures import build_synthetic_corpus
 from pdf_document_agent import extractor
 
 
+def test_parse_ocr_pages_accepts_blank() -> None:
+    assert extractor.parse_ocr_pages("") == ()
+    assert extractor.parse_ocr_pages("   ") == ()
+
+
+def test_parse_ocr_pages_expands_ranges_and_canonicalizes() -> None:
+    assert extractor.parse_ocr_pages("1, 3-5, 5") == (1, 3, 4, 5)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "1,,2",
+        "3-1",
+        "1-",
+        "-2",
+        "0",
+        "1, -3",
+        "all pages",
+        "1-1001",
+        "1,1002-2001",
+        True,
+        1,
+        None,
+    ],
+)
+def test_parse_ocr_pages_rejects_invalid_values(value) -> None:
+    with pytest.raises(ValueError):
+        extractor.parse_ocr_pages(value)
+
+
 class FakeDocument:
     def __init__(self, markdown: str, page_count: int = 2) -> None:
         self._markdown = markdown
