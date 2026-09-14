@@ -8,7 +8,7 @@ from pdf_document_agent.agent import (
     run_agent,
 )
 from pdf_document_agent.answering import INSUFFICIENT_ANSWER, AnswerGenerationError
-from pdf_document_agent.extractor import ExtractedDocument, ExtractedPage
+from pdf_document_agent.extractor import ExtractedDocument, ExtractedPage, TextRegion
 from pdf_document_agent.retrieval import TextChunk, chunk_document
 
 
@@ -81,6 +81,118 @@ def test_outline_has_no_citation_authority() -> None:
     assert run.answer.text == INSUFFICIENT_ANSWER
     assert run.final_evidence_packet == ()
     assert len(chat.calls) == 2
+
+
+def test_outline_payload_and_trace_are_bounded_and_report_truncation() -> None:
+    pages = tuple(
+        f"# {'Repeated heading ' * 20}\n\nFacts on page {page}."
+        for page in range(1, 8)
+    )
+    document, chunks = make_document(*pages)
+    chat = scripted_chat(['{"action":"outline"}', '{"action":"answer_ready"}'])
+
+    run = run_agent(
+        "Что известно?",
+        document,
+        chunks,
+        chat=chat,
+        limits=AgentLimits(
+            max_outline_items=3,
+            max_outline_heading_chars=12,
+            max_trace_pages=2,
+            max_planner_context_chars=10_000,
+        ),
+    )
+
+    event = run.trace.events[0]
+    assert event.action == "outline"
+    assert event.pages == (1, 2)
+    assert event.truncated is True
+    context = chat.calls[1][1].split("<untrusted-tool-history>\n", 1)[1].split(
+        "\n</untrusted-tool-history>", 1
+    )[0]
+    result = json.loads(json.loads(context)["result"])
+    assert result["truncated"] is True
+    assert len(result["headings"]) == 3
+    assert all(len(item["heading"]) <= 12 for item in result["headings"])
+
+
+def test_outline_payload_reports_trace_page_truncation() -> None:
+    document, chunks = make_document("# One", "# Two", "# Three")
+    chat = scripted_chat(['{"action":"outline"}', '{"action":"answer_ready"}'])
+
+    run = run_agent(
+        "Что известно?",
+        document,
+        chunks,
+        chat=chat,
+        limits=AgentLimits(
+            max_outline_items=3,
+            max_trace_pages=2,
+            max_planner_context_chars=10_000,
+        ),
+    )
+
+    event = run.trace.events[0]
+    assert event.pages == (1, 2)
+    assert event.truncated is True
+    context = chat.calls[1][1].split("<untrusted-tool-history>\n", 1)[1].split(
+        "\n</untrusted-tool-history>", 1
+    )[0]
+    result = json.loads(json.loads(context)["result"])
+    assert result["truncated"] is True
+
+
+def test_evidence_trims_leading_space_before_source_truncation() -> None:
+    document, chunks = make_document(" " * 100 + "Python facts.")
+    chat = scripted_chat(
+        [
+            '{"action":"search","query":"Python","top_k":1}',
+            '{"action":"answer_ready"}',
+            "Python facts [стр. 1].",
+        ]
+    )
+
+    run = run_agent(
+        "Что такое Python?",
+        document,
+        chunks,
+        chat=chat,
+        limits=AgentLimits(
+            max_tool_excerpt_chars=24,
+            max_final_evidence_chars=24,
+        ),
+    )
+
+    assert run.status == "ok"
+    assert run.final_evidence_packet[0].text.startswith("Python")
+
+
+@pytest.mark.parametrize("question", [None, 42, "", "   "])
+def test_invalid_question_is_rejected_before_model_execution(question) -> None:
+    document, chunks = make_document("Python facts.")
+    chat = scripted_chat([])
+
+    with pytest.raises(ValueError):
+        run_agent(question, document, chunks, chat=chat)
+
+    assert chat.calls == []
+
+
+def test_oversized_question_is_rejected_before_model_execution() -> None:
+    document, chunks = make_document("Python facts.")
+    chat = scripted_chat([])
+
+    with pytest.raises(ValueError):
+        run_agent(
+            "x" * 21,
+            document,
+            chunks,
+            chat=chat,
+            limits=AgentLimits(max_question_chars=20),
+        )
+
+    assert chat.calls == []
 
 
 @pytest.mark.parametrize(
@@ -307,6 +419,70 @@ def test_tool_and_final_evidence_are_truncated_with_bounds() -> None:
     assert "Python" in chat.calls[-1][1]
 
 
+def test_provenance_is_bounded_in_packet_payload_and_answer_sources() -> None:
+    regions = tuple(
+        TextRegion(
+            page_number=1,
+            text=f"Python region {index} with a very long provenance text.",
+            box=(index / 10, 0.0, (index + 1) / 10, 1.0),
+        )
+        for index in range(5)
+    )
+    document = ExtractedDocument(
+        source_name="book.pdf",
+        markdown="Python facts.",
+        page_count=1,
+        pages=(ExtractedPage(number=1, markdown="Python facts.", regions=regions),),
+    )
+    chunks = [
+        TextChunk(
+            index=0,
+            page_number=1,
+            text="Python facts.",
+            boxes=tuple(region.box for region in regions),
+            regions=regions,
+        )
+    ]
+    chat = scripted_chat(
+        [
+            '{"action":"search","query":"Python","top_k":1}',
+            '{"action":"answer_ready"}',
+            "Python facts [стр. 1].",
+        ]
+    )
+
+    run = run_agent(
+        "Что такое Python?",
+        document,
+        chunks,
+        chat=chat,
+        limits=AgentLimits(
+            max_evidence_boxes=2,
+            max_evidence_regions=2,
+            max_region_text_chars=16,
+            max_planner_context_chars=10_000,
+        ),
+    )
+
+    excerpt = run.final_evidence_packet[0]
+    assert run.status == "ok"
+    assert excerpt.truncated is True
+    assert len(excerpt.boxes) == 2
+    assert len(excerpt.regions) == 2
+    assert all(len(region.text) <= 16 for region in excerpt.regions)
+    assert run.answer.sources[0].boxes == excerpt.boxes
+    context = chat.calls[1][1].split("<untrusted-tool-history>\n", 1)[1].split(
+        "\n</untrusted-tool-history>", 1
+    )[0]
+    result = json.loads(json.loads(context)["result"])
+    assert len(result["excerpts"][0]["boxes"]) == 2
+    assert len(result["excerpts"][0]["regions"]) == 2
+    assert all(
+        len(region["text"]) <= 16 for region in result["excerpts"][0]["regions"]
+    )
+    assert result["excerpts"][0]["truncated"] is True
+
+
 def test_citation_allowlist_cannot_expand_after_packet_truncation() -> None:
     document, chunks = make_document("Python facts.", "Other facts.")
     chat = scripted_chat(
@@ -396,3 +572,33 @@ def test_limits_reject_bool_and_non_positive_values() -> None:
         AgentLimits(max_llm_calls=1)
     with pytest.raises(ValueError):
         AgentLimits(per_call_timeout_s=0)
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "max_outline_items",
+        "max_outline_heading_chars",
+        "max_trace_pages",
+        "max_question_chars",
+        "max_evidence_boxes",
+        "max_evidence_regions",
+        "max_region_text_chars",
+    ],
+)
+def test_new_limits_reject_bool_and_non_positive_values(field: str) -> None:
+    with pytest.raises(ValueError):
+        AgentLimits(**{field: True})
+    with pytest.raises(ValueError):
+        AgentLimits(**{field: 0})
+
+
+@pytest.mark.parametrize("field", ["max_tool_excerpt_chars", "max_final_evidence_chars"])
+def test_source_caps_must_leave_room_for_content_and_marker(field: str) -> None:
+    with pytest.raises(ValueError):
+        AgentLimits(**{field: len(TRUNCATION_MARKER)})
+
+
+def test_region_text_cap_must_leave_room_for_content_and_marker() -> None:
+    with pytest.raises(ValueError):
+        AgentLimits(max_region_text_chars=len(TRUNCATION_MARKER))

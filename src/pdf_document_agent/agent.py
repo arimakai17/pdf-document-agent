@@ -3,6 +3,7 @@
 import json
 import re
 from dataclasses import dataclass
+from io import StringIO
 from time import monotonic
 from typing import Callable, Literal
 
@@ -47,6 +48,13 @@ class AgentLimits:
     max_final_evidence_chars: int = 8_000
     max_evidence_items: int = 8
     search_top_k_cap: int = 5
+    max_outline_items: int = 32
+    max_outline_heading_chars: int = 160
+    max_trace_pages: int = 16
+    max_question_chars: int = 2_000
+    max_evidence_boxes: int = 32
+    max_evidence_regions: int = 32
+    max_region_text_chars: int = 400
 
     def __post_init__(self) -> None:
         integer_fields = (
@@ -61,6 +69,13 @@ class AgentLimits:
             "max_final_evidence_chars",
             "max_evidence_items",
             "search_top_k_cap",
+            "max_outline_items",
+            "max_outline_heading_chars",
+            "max_trace_pages",
+            "max_question_chars",
+            "max_evidence_boxes",
+            "max_evidence_regions",
+            "max_region_text_chars",
         )
         for name in integer_fields:
             value = getattr(self, name)
@@ -68,6 +83,15 @@ class AgentLimits:
                 raise ValueError(f"{name} должен быть положительным int.")
         if self.max_llm_calls < 2:
             raise ValueError("max_llm_calls должен оставить один вызов для final.")
+        for name in (
+            "max_tool_excerpt_chars",
+            "max_final_evidence_chars",
+            "max_region_text_chars",
+        ):
+            if getattr(self, name) <= len(TRUNCATION_MARKER):
+                raise ValueError(
+                    f"{name} должен быть больше длины маркера усечения."
+                )
         for name in ("per_call_timeout_s", "run_deadline_s"):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
@@ -178,6 +202,10 @@ def run_agent(
         raise TypeError("limits должен быть AgentLimits")
     if answer_language not in (None, "Russian", "English"):
         raise ValueError("Поддерживаются только Russian и English.")
+    if not isinstance(question, str) or not question.strip():
+        raise ValueError("Вопрос должен быть непустой строкой.")
+    if len(question) > limits.max_question_chars:
+        raise ValueError("Вопрос превышает допустимую длину.")
 
     started = monotonic()
     deadline = started + limits.run_deadline_s
@@ -275,8 +303,9 @@ def run_agent(
         )
 
     def add_evidence(item: EvidenceExcerpt) -> EvidenceExcerpt | None:
+        source_text = item.text.strip()
         if (
-            not item.text.strip()
+            not source_text
             or item.evidence_id in evidence_ids
             or len(evidence) >= limits.max_evidence_items
         ):
@@ -284,18 +313,36 @@ def run_agent(
         remaining_chars = limits.max_final_evidence_chars - sum(
             len(existing.text) for existing in evidence
         )
-        if remaining_chars <= 0:
+        if remaining_chars <= len(TRUNCATION_MARKER):
             return None
         bounded, truncated = _bounded_text(
-            item.text, min(limits.max_tool_excerpt_chars, remaining_chars)
+            source_text, min(limits.max_tool_excerpt_chars, remaining_chars)
         )
+        boxes = item.boxes[: limits.max_evidence_boxes]
+        regions: list[TextRegion] = []
+        provenance_truncated = (
+            len(item.boxes) > len(boxes)
+            or len(item.regions) > limits.max_evidence_regions
+        )
+        for region in item.regions[: limits.max_evidence_regions]:
+            region_text, region_truncated = _bounded_text(
+                region.text, limits.max_region_text_chars
+            )
+            provenance_truncated = provenance_truncated or region_truncated
+            regions.append(
+                TextRegion(
+                    page_number=region.page_number,
+                    text=region_text,
+                    box=region.box,
+                )
+            )
         stored = EvidenceExcerpt(
             evidence_id=item.evidence_id,
             page_number=item.page_number,
             text=bounded,
-            boxes=item.boxes,
-            regions=item.regions,
-            truncated=item.truncated or truncated,
+            boxes=boxes,
+            regions=tuple(regions),
+            truncated=item.truncated or truncated or provenance_truncated,
         )
         evidence.append(stored)
         evidence_ids.add(stored.evidence_id)
@@ -307,11 +354,22 @@ def run_agent(
             raise _BudgetStop
         tool_calls += 1
         if action.kind == "outline":
-            headings = _outline(document)
+            headings, truncated = _outline(document, limits)
+            pages: list[int] = []
+            for item in headings:
+                page = int(item["page"])
+                if page in pages:
+                    continue
+                if len(pages) >= limits.max_trace_pages:
+                    truncated = True
+                    break
+                pages.append(page)
             payload = json.dumps(
-                {"headings": headings}, ensure_ascii=False, separators=(",", ":")
+                {"headings": headings, "truncated": truncated},
+                ensure_ascii=False,
+                separators=(",", ":"),
             )
-            return payload, tuple(item["page"] for item in headings), False
+            return payload, tuple(pages), truncated
         if action.kind == "search":
             matches = search_chunks(action.query or "", chunks, top_k=action.top_k or 1)
             returned: list[dict] = []
@@ -448,14 +506,24 @@ def _bounded_text(text: str, limit: int) -> tuple[str, bool]:
     return text[: limit - len(TRUNCATION_MARKER)] + TRUNCATION_MARKER, True
 
 
-def _outline(document: ExtractedDocument) -> list[dict[str, int | str]]:
+def _outline(
+    document: ExtractedDocument,
+    limits: AgentLimits,
+) -> tuple[list[dict[str, int | str]], bool]:
     headings: list[dict[str, int | str]] = []
+    truncated = False
     for page in document.pages:
-        for line in page.markdown.splitlines():
+        for line in StringIO(page.markdown):
             match = _HEADING_PATTERN.match(line)
             if match:
-                headings.append({"heading": match.group(1).strip(), "page": page.number})
-    return headings
+                if len(headings) >= limits.max_outline_items:
+                    return headings, True
+                heading, heading_truncated = _bounded_text(
+                    match.group(1).strip(), limits.max_outline_heading_chars
+                )
+                headings.append({"heading": heading, "page": page.number})
+                truncated = truncated or heading_truncated
+    return headings, truncated
 
 
 def _evidence_payload(item: EvidenceExcerpt) -> dict:
